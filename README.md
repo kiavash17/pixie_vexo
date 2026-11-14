@@ -8,6 +8,40 @@ over Bluetooth and reads every sensor plus the microphone.
 - **Phase 2 (10 s):** microphone on (the band's light is solid blue), loudness meter, voice
   saved to `hello.ogg`, and a live transcript through Deepgram when a key is set.
 
+## Pixie guardian app (`/mom`)
+
+`python server.py`, then open `http://localhost:8765/mom` (the parent's phone view).
+
+- **Help request:** the child double-taps the band, Mom is alerted at once, and the mic opens
+  for 8 s (voice note + transcript). A second double-tap makes it urgent.
+- **Acknowledgement on the wrist:** amber = waiting, red = urgent, green = "I'm coming".
+- **Escalation:** no answer in 30 s → louder + second guardian; then a (simulated) call.
+- **Listening mode (Gemini):** 5 s windows with sound go to Gemini, which scores crying,
+  screaming, adult anger and **concerning adult behaviour** (luring/grooming patterns judged
+  with the last 2 min of conversation), and counts child/adult voices. A signal must persist
+  (2 of 3 windows, or one ≥ 0.85). Crying → alert; screaming / angry or concerning adult →
+  urgent alert. Clips: 30 s (+20 s after), 60 s for concerning adults; any adult anger ≥ 0.4
+  is logged with a 15 s clip. Audio otherwise stays in a 60 s RAM buffer.
+- **Assessment:** Gemini hears the clip (words and tone) and writes summary, tone, voices,
+  suggested action; it can raise urgency, never lower it. Fallback: OpenAI, then rules.
+- **Fall check, hug, find band, event log with outcome labels, offline/low-battery banners.**
+
+Keys in `.env` (never committed): `DEEPGRAM_API_KEY`, `GEMINI_API_KEY`
+(optional fallback `GEMINI_WORKSHOP_API_KEY`).
+
+### Testing without a band
+
+```
+python tests/make_test_audio.py testaudio             # Gemini TTS: calm, teacher, angry adult, scared child, luring
+python tests/to_band_ogg.py testaudio/scenes.ogg 4 testaudio/calm.wav testaudio/teacher.wav testaudio/angry_adult.wav testaudio/scared_child.wav testaudio/luring.wav
+python server.py --sim --port 8766 --sim-audio testaudio/scenes.ogg
+python tests/test_scenes.py                           # turns on listening mode, prints every alert
+```
+
+Result on 2026-11-14: no alerts for the calm and teacher scenes; urgent alerts for the angry
+adult (0.90), crying (0.80–0.90) and the luring adult (0.90–0.95, "asked the child to keep a
+secret and go with them").
+
 ## Control room (`server.py`)
 
 A live diagnostic page for the band: live transcript, accelerometer / gyroscope / mic

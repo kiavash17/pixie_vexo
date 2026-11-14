@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#6c4cf1">
+<title>Pixie · Guardian</title>
+<link rel="stylesheet" href="/static/mom.css">
+</head>
+<body>
+<div class="phone">
+  <header class="appbar">
+    <div class="logo">✦ Pixie</div>
+    <div class="who"><span class="avatar" id="avatar">M</span><span id="child">Maya</span><span id="dot" class="dot"></span></div>
+  </header>
+
+  <div id="notice" class="notice hidden"></div>
+  <button id="sound" class="sound">🔔 Tap to enable alert sounds</button>
+
+  <!-- active alert -->
+  <section id="alert" class="alert hidden">
+    <div class="alert-top">
+      <div class="alert-icon" id="a-icon">🙋</div>
+      <div>
+        <div class="alert-title" id="a-title">Maya wants you</div>
+        <div class="alert-sub" id="a-sub">just now</div>
+      </div>
+    </div>
+    <div id="a-countdown" class="countdown hidden"></div>
+
+    <div id="a-listen" class="listen hidden">
+      <span class="pulse"></span><span>Listening to Maya…</span>
+      <div class="live" id="a-live"></div>
+    </div>
+
+    <div id="a-chips" class="chips"></div>
+
+    <div id="a-ai" class="ai hidden">
+      <div class="ai-head"><span id="a-ai-src" class="badge">AI</span> <b id="a-ai-sum"></b></div>
+      <div class="ai-why" id="a-ai-why"></div>
+      <div class="ai-act" id="a-ai-act"></div>
+    </div>
+
+    <div id="a-voice" class="voice hidden">
+      <div class="quote" id="a-quote"></div>
+      <audio id="a-audio" controls preload="none"></audio>
+    </div>
+
+    <div class="buttons" id="a-buttons">
+      <button class="primary" id="b-coming">I'm coming</button>
+      <button class="ghost" id="b-resolve">Resolved</button>
+    </div>
+    <div class="outcomes hidden" id="a-outcomes">
+      <div class="label">What was it?</div>
+      <button data-o="accidental">Accidental</button>
+      <button data-o="wanted me">Wanted me</button>
+      <button data-o="urgent">Urgent</button>
+    </div>
+
+    <details class="timeline" open>
+      <summary>Timeline</summary>
+      <ol id="a-timeline"></ol>
+    </details>
+  </section>
+
+  <!-- calm state -->
+  <section id="calm" class="calm">
+    <div class="calm-icon">🌙</div>
+    <div class="calm-title">All calm</div>
+    <div class="calm-sub" id="calm-sub">Maya can double-tap the band whenever they need you.</div>
+  </section>
+
+  <!-- listening mode -->
+  <section class="card listen">
+    <div class="listen-head">
+      <h2>Listening mode</h2>
+      <label class="switch"><input type="checkbox" id="b-listen"><span></span></label>
+    </div>
+    <div class="listen-body" id="l-body">Off. When on, Pixie listens for crying, screaming and angry adult voices (the band's light stays blue).</div>
+    <div class="meters hidden" id="l-meters">
+      <div><label>Crying</label><div class="bar"><i id="m-crying"></i></div></div>
+      <div><label>Screaming</label><div class="bar"><i id="m-screaming"></i></div></div>
+      <div><label>Adult anger</label><div class="bar"><i id="m-adult_anger"></i></div></div>
+      <div><label>Concerning adult behaviour</label><div class="bar"><i id="m-adult_concerning"></i></div></div>
+      <div class="voices" id="l-voices"></div>
+    </div>
+  </section>
+
+  <!-- band status -->
+  <section class="card status">
+    <h2>Band</h2>
+    <div class="grid">
+      <div><label>Connection</label><b id="s-conn">–</b><small id="s-seen"></small></div>
+      <div><label>Battery</label><b id="s-bat">–</b></div>
+      <div><label>Distance</label><b id="s-dist">–</b><small id="s-rssi"></small></div>
+      <div><label>Activity</label><b id="s-act">–</b><small id="s-steps"></small></div>
+    </div>
+    <div class="row">
+      <button id="b-hug">💗 Send a hug</button>
+      <button id="b-find">🔦 Find band</button>
+      <label class="toggle"><input type="checkbox" id="b-fall" checked> Fall check</label>
+    </div>
+  </section>
+
+  <!-- history -->
+  <section class="card">
+    <h2>History</h2>
+    <ul id="history" class="history"></ul>
+  </section>
+
+  <section class="demo">
+    <span>Demo:</span>
+    <button id="sim-tap">Simulate double-tap</button>
+    <button id="sim-fall">Simulate fall</button>
+    <button id="sim-cry">Simulate crying</button>
+    <button id="sim-anger">Simulate angry adult</button>
+    <button id="sim-concern">Simulate luring adult</button>
+    <a href="/" target="_blank">Control room ↗</a>
+  </section>
+</div>
+<script src="/static/mom.js"></script>
+</body>
+</html>

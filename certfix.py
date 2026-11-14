@@ -18,3 +18,4 @@ def _create_default_context(purpose=ssl.Purpose.SERVER_AUTH, *, cafile=None, cap
 
 
 ssl.create_default_context = _create_default_context
+ssl._create_default_https_context = _create_default_context   # used by urllib / http.client

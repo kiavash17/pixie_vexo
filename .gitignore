@@ -3,3 +3,6 @@ vexo-open-kit/
 *.ogg
 __pycache__/
 recordings/
+data/
+data-sim/
+testaudio/

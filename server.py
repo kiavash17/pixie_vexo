@@ -12,6 +12,7 @@ Band  --BLE-->  server.py  --WebSocket-->  browser (static/)
 import argparse
 import asyncio
 import datetime
+import io
 import json
 import os
 import sys
@@ -28,11 +29,16 @@ from vexo_open import Band, VexoError  # noqa: E402
 from vexo_open.audio import PcmDecoder, ogg_packets  # noqa: E402
 from ogg_opus import OggOpusWriter  # noqa: E402
 import speech  # noqa: E402
+from pixie import Pixie  # noqa: E402
+import collections  # noqa: E402
+import math  # noqa: E402
+import time  # noqa: E402
 
 BAND = 6                                           # our band: Vexo-HACK-06
 PORT = 8765
 REC_DIR = ROOT / "recordings"
 SENSORS = dict(motion=50, events=True, activity=True, battery=10, temperature=2, link=True)
+PIXIE_COMMANDS = {"ack", "resolve", "label", "hug", "find", "simulate", "fall_check", "listen"}
 DATA_EVENTS = ["motion", "event", "activity", "battery", "temperature", "link", "mic-level"]
 
 
@@ -55,9 +61,15 @@ class RoomSpeech(speech.DeepgramSpeech):
             self._sentence_ends()
 
 
+class _KeepOpen(io.BytesIO):
+    def close(self):                               # OggOpusWriter.close() closes its file
+        pass
+
+
 class Hub:
     def __init__(self, transport):
         self.transport = transport
+        self.sim_audio = None
         self.band = None
         self.clients = {}                          # websocket -> outgoing queue
         self.status = {"type": "status", "state": "idle", "band": "Vexo-HACK-%02d" % BAND,
@@ -68,15 +80,62 @@ class Hub:
         self.loop = None
         self.latest = {}                           # newest message of each type, for the monitor
         self.counts = {"motion": 0, "audio": 0}
+        self.motion_hist = collections.deque(maxlen=600)   # (time, |a| in g), ~12 s at 50 Hz
+        self.packets = collections.deque(maxlen=50 * 60)  # (time, seq, opus): last 60 s, RAM only
+        self.levels = collections.deque(maxlen=600)        # (time, rms_db) from mic-level
+        self.pixie = Pixie(self, ROOT / ("data-sim" if transport == "sim" else "data"))   # keep tests apart
+
+    # ---------------------------------------------------------------- rolling audio buffer
+    def clip(self, seconds, end=None):
+        """Ogg Opus bytes of the last `seconds` of mic audio (from the RAM buffer)."""
+        end = end or time.time()
+        chosen = [(s, o) for t, s, o in list(self.packets) if end - seconds <= t <= end]
+        if not chosen:
+            return b""
+        buf = _KeepOpen()
+        w = OggOpusWriter(buf)
+        first = chosen[0][0]
+        for s, o in chosen:
+            w.write((s - first) & 0xFFFF, o)
+        w.close()                                  # writes the last page; buffer stays readable
+        return buf.getvalue()
+
+    def save_clip(self, name, seconds, end=None):
+        data = self.clip(seconds, end)
+        if data:
+            REC_DIR.mkdir(exist_ok=True)
+            (REC_DIR / name).write_bytes(data)
+            self.push({"type": "recordings", "files": list_recordings()})
+        return bool(data)
+
+    def loudest_db(self, seconds):
+        """Smallest rms_db (= loudest) in the last `seconds`, or None."""
+        vals = [db for t, db in list(self.levels) if time.time() - t <= seconds]
+        return min(vals) if vals else None
 
     # ---------------------------------------------------------------- terminal monitor
     def on_data(self, name, m):
         self.latest[name] = m
+        if name == "mic-level":
+            self.levels.append((time.time(), m["rms_db"]))
         if name == "motion":
             self.counts["motion"] += 1
+            self.motion_hist.append((time.time(), math.sqrt(m["ax"] ** 2 + m["ay"] ** 2 + m["az"] ** 2)))
         elif name == "event":
             print("  [gesture] %s%s" % (m.get("kind"), " " + m["face"] if m.get("face") else ""))
         self.push(dict(m, type=name))
+        self.pixie.on_data(name, m)
+
+    def motion_context(self):
+        """What the wearer's body was doing in the 10 s before now, for the alert and the AI."""
+        recent = [g for t, g in self.motion_hist if time.time() - t < 10]
+        act = self.latest.get("activity") or {}
+        if not recent:
+            return {"activity": act.get("state"), "peak_g": None, "movement": "unknown"}
+        peak = max(recent)
+        jitter = sum(abs(g - 1.0) for g in recent) / len(recent)
+        movement = "still" if jitter < 0.05 else "moving" if jitter < 0.3 else "vigorous / shaking"
+        return {"activity": act.get("state"), "peak_g": round(peak, 2), "movement": movement}
 
     async def monitor(self):
         """Once a second: one parsed line of everything the band sends."""
@@ -84,6 +143,7 @@ class Hub:
             await asyncio.sleep(1.0)
             n_motion, n_audio = self.counts["motion"], self.counts["audio"]
             self.counts = {"motion": 0, "audio": 0}
+            self.pixie.publish()                   # mom view: status, last seen, timers
             if self.status["state"] != "connected":
                 continue
             L = self.latest
@@ -112,6 +172,7 @@ class Hub:
         if final:
             print("  [heard] %s" % text)
         self.push({"type": "transcript", "text": text, "final": final})
+        self.pixie.on_text(text, final)
 
     # ---------------------------------------------------------------- to the browsers
     def push(self, obj):
@@ -138,7 +199,7 @@ class Hub:
         self.set_status(state="connecting", message="Looking for Vexo-HACK-%02d (double-tap it)..." % BAND)
         extra = {}
         if self.transport == "sim":                # pretend band speaks the kit's sample recording
-            extra["audio_packets"] = ogg_packets(str(KIT / "dashboard" / "speech" / "sample-speech.opus"))
+            extra["audio_packets"] = ogg_packets(self.sim_audio or str(KIT / "dashboard" / "speech" / "sample-speech.opus"))
         try:
             band = await Band.connect(BAND, self.transport, auto_reconnect=True, **extra)
         except VexoError as e:
@@ -153,34 +214,49 @@ class Hub:
         band.on("disconnect", self.on_disconnect)
         await band.configure(**SENSORS)
         self.set_status(state="connected", message="Connected to %s (firmware %s)" % (band.name, band.info.firmware))
-        await self.set_mic(True)
+        self.pixie.on_connection(True)             # mic stays off: Pixie opens it only after a help request
 
     def on_reconnected(self, m):
         self.decoder = PcmDecoder() if self.status["mic"] else None   # new stream: new decoder
         self.set_status(state="connected", message="Reconnected")
+        self.pixie.on_connection(True)
 
     def on_disconnect(self, m):
         self.band = None
         self.stop_audio_outputs()
         self.set_status(state="idle", mic=False, message="Band disconnected. Double-tap it and press Connect.")
+        self.pixie.on_connection(False)
 
     # ---------------------------------------------------------------- microphone
-    async def set_mic(self, on):
+    async def set_mic(self, on, name=None, record=True):
+        """Mic on: live transcript, plus a file recordings/<name> when record=True
+        (Listening mode uses record=False: audio stays in the 60 s RAM buffer only).
+        Mic off: returns the final transcript of that mic session."""
         if not self.band:
-            return
+            return None
         if on and not self.status["mic"]:
             self.decoder = PcmDecoder()
             REC_DIR.mkdir(exist_ok=True)
-            name = "session-%s.ogg" % datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            self.ogg = OggOpusWriter(str(REC_DIR / name))
+            name = name or "session-%s.ogg" % datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            self.ogg = OggOpusWriter(str(REC_DIR / name)) if record else None
             self.start_transcript()
             await self.band.configure(audio=True, mic_level=0.1)
-            self.set_status(mic=True, recording=name, message="Mic on: band light is solid blue")
+            self.set_status(mic=True, recording=name if record else None,
+                            message="Mic on: band light is solid blue")
         elif not on and self.status["mic"]:
             await self.band.configure(audio=False, mic_level=False)
+            ears, self.ears = self.ears, None
             self.stop_audio_outputs()
+            text = ""
+            if ears:
+                try:
+                    text = await self.loop.run_in_executor(None, ears.stop)
+                except Exception as e:
+                    print("  transcript stop: %s" % e)
             self.set_status(mic=False, message="Mic off")
             self.push({"type": "recordings", "files": list_recordings()})
+            return text
+        return None
 
     def start_transcript(self):
         try:
@@ -204,6 +280,7 @@ class Hub:
 
     def on_audio(self, a):                         # 50 Opus packets/s, 16 kHz mono, 20 ms
         self.counts["audio"] += 1
+        self.packets.append((time.time(), a.seq, bytes(a.opus)))
         if self.ogg:
             self.ogg.write(a.seq, a.opus)
         if self.ears:
@@ -238,6 +315,7 @@ async def ws_handler(request):
     hub.clients[ws] = q
     q.put_nowait(json.dumps(hub.status))
     q.put_nowait(json.dumps({"type": "recordings", "files": list_recordings()}))
+    q.put_nowait(json.dumps(hub.pixie.snapshot(), default=str))
 
     async def writer():
         while True:
@@ -260,6 +338,11 @@ async def ws_handler(request):
                     await hub.set_mic(bool(cmd.get("on")))
                 except VexoError as e:
                     hub.set_status(message=str(e))
+            elif cmd.get("cmd") in PIXIE_COMMANDS:
+                try:
+                    await hub.pixie.command(cmd)
+                except Exception as e:
+                    print("  [pixie] command %s failed: %s" % (cmd.get("cmd"), e))
     finally:
         task.cancel()
         hub.clients.pop(ws, None)
@@ -273,6 +356,7 @@ async def on_startup(app):
     PcmDecoder()                                   # load av once, before the band streams
     asyncio.ensure_future(hub.connect())
     asyncio.ensure_future(hub.monitor())
+    asyncio.ensure_future(hub.pixie.listen_loop())
 
 
 async def no_cache(request, response):             # always serve the newest page code
@@ -286,20 +370,24 @@ async def on_cleanup(app):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--sim", action="store_true", help="pretend band")
+    p.add_argument("--port", type=int, default=PORT)
+    p.add_argument("--sim-audio", help="Ogg Opus file the pretend band plays as its microphone")
     args = p.parse_args()
     os.chdir(ROOT)                                 # speech.py reads .env from the current folder
     app = web.Application()
     app["hub"] = Hub("sim" if args.sim else "ble")
+    app["hub"].sim_audio = args.sim_audio
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/", lambda r: web.FileResponse(ROOT / "static" / "index.html"))
+    app.router.add_get("/mom", lambda r: web.FileResponse(ROOT / "static" / "mom.html"))
     REC_DIR.mkdir(exist_ok=True)
     app.router.add_static("/recordings/", REC_DIR)
     app.router.add_static("/static/", ROOT / "static")
     app.on_response_prepare.append(no_cache)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
-    print("Control room: http://127.0.0.1:%d" % PORT)
-    web.run_app(app, host="127.0.0.1", port=PORT, print=None)
+    print("Control room: http://127.0.0.1:%d   Mom view: http://127.0.0.1:%d/mom" % (args.port, args.port))
+    web.run_app(app, host="127.0.0.1", port=args.port, print=None)
 
 
 if __name__ == "__main__":
