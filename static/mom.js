@@ -37,8 +37,8 @@ function plain(text) {
     .replace(/: \(simulated[^)]*\)$/i, '')
     .trim();
 }
-const OUTCOME_WORDS = { 'wanted me': 'Just wanted me', accidental: 'Pocket tap', urgent: 'Real problem', ok: 'Said OK' };
-const SIGNAL_WORDS = { crying: 'Crying heard', screaming: 'Screaming heard', adult_anger: 'Angry adult voice', adult_concerning: 'Worrying adult behaviour' };
+const OUTCOME_WORDS = { 'wanted me': '👋 Just wanted me', accidental: '🤚 Pocket tap', urgent: '❗ Real problem', ok: '👍 Said OK' };
+const SIGNAL_WORDS = { crying: '😢 Crying', screaming: '😱 Screaming', adult_anger: '😠 Angry adult', adult_concerning: '⚠ Worrying adult' };
 
 // ------------------------------------------------------------------ sound (#7)
 let audioCtx = null, lastChime = 0;
@@ -128,11 +128,13 @@ function renderWallet(W, child) {
     $('w-paused').classList.toggle('hidden', !W.frozen);
   }
   $('w-recent').replaceChildren(...W.recent.slice(0, 4).map((t) => {
-    const li = el('li');
-    const mid = el('div');
-    mid.append(el('div', '', `${t.emoji} ${t.item}`),
-      el('small', '', `${clockTime(t.t)}${t.status === 'approved' ? (t.by_parent ? ' · you approved' : '') : ` · declined${t.note ? ': ' + t.note : ''}`}`));
-    li.append(mid, el('span', `amt ${t.status === 'approved' ? '' : 'no'}`, t.status === 'approved' ? `-${money(t.amount)}` : 'Declined'));
+    const ok = t.status === 'approved';
+    const li = el('li', ok ? '' : 'declined');
+    li.title = `${t.item} · ${clockTime(t.t)}${ok ? (t.by_parent ? ' · you approved' : '') : ` · declined${t.note ? ': ' + t.note : ''}`}`;
+    li.append(el('div', 'em', t.emoji), el('span', `amt ${ok ? '' : 'no'}`, ok ? money(t.amount) : 'No'),
+      el('small', '', clockTime(t.t)));
+    if (t.by_parent) li.append(el('span', 'badge-x', ok ? '👍' : '✋'));
+    else if (!ok) li.append(el('span', 'badge-x', '✋'));
     return li;
   }));
 }
@@ -154,21 +156,56 @@ function renderWalletSettings(W) {
   }
   box.querySelectorAll('input').forEach((cb) => { cb.checked = !!W.categories[cb.dataset.cat]; });
 }
+/** Two-tap confirm on the page itself: first tap arms the button for 4 s, second tap runs it. */
+function confirmButton(btn, label, run) {
+  let timer = null;
+  btn.onclick = () => {
+    if (!btn.classList.contains('confirm')) {
+      btn.classList.add('confirm'); btn.textContent = 'Tap again to delete';
+      timer = setTimeout(() => { btn.classList.remove('confirm'); btn.textContent = label; }, 4000);
+      return;
+    }
+    clearTimeout(timer); btn.classList.remove('confirm'); btn.textContent = 'Cleared ✓';
+    run();
+    setTimeout(() => { btn.textContent = label; }, 2000);
+  };
+}
+confirmButton($('s-clear-history'), 'Clear', () => send({ cmd: 'clear_history' }));
+confirmButton($('s-clear-tx'), 'Clear', () => send({ cmd: 'wallet', action: 'clear_tx' }));
+
 $('s-daily').onchange = (e) => send({ cmd: 'wallet', action: 'set', daily: e.target.value });
 $('s-per').onchange = (e) => send({ cmd: 'wallet', action: 'set', per_purchase: e.target.value });
 $('s-frozen').onchange = (e) => send({ cmd: 'wallet', action: 'set', frozen: e.target.checked });
 
+const ACTIVITY_ICON = { still: ['🧍', 'Still'], walk: ['🚶', 'Walking'], run: ['🏃', 'Running'] };
+function signalBars(rssi) {
+  if (rssi == null) return 0;
+  return rssi > -60 ? 4 : rssi > -70 ? 3 : rssi > -80 ? 2 : 1;
+}
 function renderCalm(child) {
-  $('calm-sub').textContent = `${child} can double-tap the band whenever they need you.`;
-  const L = S.listen || {};
-  const line = $('calm-listen');
-  line.classList.toggle('hidden', !L.on);
-  if (!L.on) return;
-  const last = L.last || {};
-  const worry = Object.keys(SIGNAL_WORDS).filter((k) => (last[k] || 0) >= 0.4 && !L.quiet);
-  if (L.error) line.textContent = '🎧 Listening · couldn\'t check just now, retrying';
-  else if (worry.length) line.textContent = `🎧 Listening · noticed: ${worry.map((k) => SIGNAL_WORDS[k].toLowerCase()).join(', ')}`;
-  else line.textContent = `🎧 Listening · all calm around ${child}${L.t ? ` · checked ${ago(L.t)}` : ''}`;
+  const b = S.band, L = S.listen || {};
+  $('hero-avatar').textContent = child[0];
+  $('ring').className = `ring ${!b.connected ? 'offline' : L.on ? 'listening' : ''}`;
+  $('hero-title').textContent = b.connected ? `${child} is OK` : `Can't reach ${child}'s band`;
+  $('calm-sub').textContent = b.connected ? 'Double-tap the band = "I need you"' : 'Alerts can\'t reach you until it reconnects';
+  // battery gauge
+  const bat = b.battery;
+  const g = $('t-bat');
+  g.style.setProperty('--p', bat == null ? 0 : bat);
+  g.style.setProperty('--c', bat == null ? '#dedbe9' : bat < 20 ? '#c62828' : bat < 50 ? '#f2a51a' : '#2fbf71');
+  $('t-bat-v').textContent = bat == null ? '–' : `${bat}%${b.charging ? '⚡' : ''}`;
+  // distance as signal bars
+  const lit = b.connected ? signalBars(b.rssi) : 0;
+  $('t-sig').querySelectorAll('i').forEach((i, n) => i.classList.toggle('on', n < lit));
+  $('t-sig-l').textContent = !b.connected ? 'Offline' : lit >= 4 ? 'Very close' : lit >= 2 ? 'Nearby' : lit ? 'Far' : 'Distance';
+  // activity
+  const [ic, word] = ACTIVITY_ICON[b.activity] || ['🧍', 'Activity'];
+  $('t-act').textContent = ic; $('t-act-l').textContent = word;
+  // listening
+  const worry = L.on && !L.quiet && L.last && Object.keys(SIGNAL_WORDS).some((k) => (L.last[k] || 0) >= 0.4);
+  $('t-listen').textContent = !L.on ? '🔇' : worry ? '👂' : '🎧';
+  $('t-listen').classList.toggle('off', !L.on);
+  $('t-listen-l').textContent = !L.on ? 'Not listening' : worry ? 'Heard something' : 'All quiet';
 }
 
 let lastAlertId = null;
@@ -185,6 +222,9 @@ function renderAlert(a, child) {
   // chip + title + ONE consistent reason line (#1)
   const chip = { coming: '✓ On the way', checking: '🤸 Checking', danger: '⚠ Possible luring', urgent: '🚨 Urgent', waiting: '⚠ Needs you' }[cls];
   $('a-chip').textContent = chip;
+  const crying = a.signals && a.signals.crying >= 0.6;
+  $('a-icon').textContent = { coming: '🏃', checking: '🤸', danger: '⚠️' }[cls]
+    || (a.kind === 'distress' ? (crying && !urgent ? '😢' : a.signals && a.signals.adult_anger >= 0.6 ? '😠' : '😱') : urgent ? '🚨' : '🙋');
   let title;
   if (a.state === 'coming') title = danger ? `Go to ${child} now: you're on your way` : `You're on your way`;
   else if (a.state === 'checking') title = `Checking on ${child}`;
@@ -229,19 +269,12 @@ function renderAlert(a, child) {
   let next = '';
   if (a.state === 'checking') next = `If ${child} doesn't answer, you'll get an alert in ${Math.max(0, Math.round(a.created + 15 - now))} s.`;
   else if (stalled) next = `Everyone has been alerted and ${child} is still waiting.`;
-  else if (waiting) {
-    const due = Math.max(0, Math.round(a.created + S.ack_timeout * (a.escalation + 1) - now));
-    next = a.escalation === 0 ? `If no one answers, ${S.guardians[1].name} gets this alert in ${due} s.`
-                              : `Pixie will call ${S.guardians[0].name} and ${S.guardians[1].name} in ${due} s.`;
-  }
   $('a-next').textContent = next; $('a-next').classList.toggle('hidden', !next);
+  renderLadder(a, waiting && !stalled, now);
 
   // evidence chips in plain words
   const chips = [];
-  if (a.voices && (a.voices.children || a.voices.adults)) {
-    const c = a.voices.children, ad = a.voices.adults;
-    chips.push(`👥 ${c} child${c === 1 ? '' : 'ren'}, ${ad} adult${ad === 1 ? '' : 's'} nearby`);
-  }
+  if (a.voices && (a.voices.children || a.voices.adults)) chips.push(`👧 ${a.voices.children}  ·  🧑 ${a.voices.adults} nearby`);
   if (a.signals) for (const [k, v] of Object.entries(a.signals)) {
     if (v >= 0.6 && SIGNAL_WORDS[k] && !(danger && k === 'adult_concerning')) chips.push(SIGNAL_WORDS[k]);
   }
@@ -261,6 +294,33 @@ function renderAlert(a, child) {
     const li = el('li'); li.append(el('time', '', clockTime(x.t)), document.createTextNode(plain(x.text))); return li;
   }));
   maybeChime(a);
+}
+
+/** Escalation as a picture: 👩 Mom → 👨 Dad → 📞 Call, with a countdown ring on the current step. */
+function renderLadder(a, show, now) {
+  const box = $('a-ladder');
+  box.classList.toggle('hidden', !show);
+  if (!show) return;
+  const [g1, g2] = S.guardians;
+  const steps = [['👩', g1.name], ['👨', g2.name], ['📞', 'Call']];
+  const nodes = [];
+  steps.forEach(([ic, name], i) => {
+    if (i) nodes.push(el('div', 'link-line'));
+    const state = i < a.escalation + 1 ? (i === a.escalation ? 'now' : 'done') : 'pending';
+    const step = el('div', `step ${state}`);
+    const dot = el('div', 'dot');
+    if (state === 'now' && i < steps.length - 1) {
+      const start = a.created + S.ack_timeout * i, due = start + S.ack_timeout;
+      dot.style.setProperty('--p', Math.max(0, Math.min(100, ((due - now) / S.ack_timeout) * 100)));
+      dot.append(el('b', '', ic));
+      step.append(dot, el('span', '', `${name} · ${Math.max(0, Math.round(due - now))}s`));
+    } else {
+      dot.textContent = ic;
+      step.append(dot, el('span', '', name));
+    }
+    nodes.push(step);
+  });
+  box.replaceChildren(...nodes);
 }
 
 // ------------------------------------------------------------------ history (#9)
@@ -287,18 +347,19 @@ function renderHistory(child) {
   for (const e of important) {
     const d = dayLabel(e.created);
     if (d !== lastDay) { nodes.push(el('div', 'day', d)); lastDay = d; }
-    const item = el('div', 'item');
-    item.append(el('div', 'ic', historyIcon(e)));
+    const lure = e.concern_quotes && e.concern_quotes.length;
+    const sev = lure ? 3 : e.kind === 'note' ? 1 : e.outcome === 'ok' ? 0 : e.level >= 2 ? 2 : 1;
+    const item = el('div', `item sev${sev}`);
+    item.append(el('div', 'ic', lure ? '⚠️' : historyIcon(e)));
     const body = el('div', 'body');
     const top = el('div', 'top');
     top.append(el('span', 'title', historyTitle(e, child)), el('span', 'time', clockTime(e.created)));
     body.append(top);
-    const lure = e.concern_quotes && e.concern_quotes.length;
     const sub = lure ? `${e.concern ? e.concern + ': ' : ''}“${e.concern_quotes[0]}”`
       : e.transcript ? `“${e.transcript}”` : e.kind === 'note' ? plain(e.reasons[0].split(':').slice(1).join(':')) : (e.ai ? plain(e.ai.summary) : '');
     if (sub) body.append(el('div', 'sub', sub));
     const foot = el('div', 'foot');
-    if (e.acked_at) foot.append(el('span', 'outcome', `Answered in ${Math.round(e.acked_at - e.created)} s by ${e.acked_by}`));
+    if (e.acked_at) foot.append(el('span', 'outcome', `⏱ ${Math.round(e.acked_at - e.created)} s · ${e.acked_by}`));
     if (e.audio) {
       const play = el('button', 'mini', '▶ Play');
       play.onclick = () => new Audio(`/recordings/${encodeURIComponent(e.audio)}`).play();
@@ -306,9 +367,8 @@ function renderHistory(child) {
     }
     if (e.kind !== 'note') {
       if (e.outcome) {
-        const o = el('span', 'outcome'); o.append('Marked: ', el('b', '', OUTCOME_WORDS[e.outcome] || e.outcome)); foot.append(o);
+        const o = el('span', 'outcome'); o.append(el('b', '', OUTCOME_WORDS[e.outcome] || e.outcome)); foot.append(o);
       } else {
-        foot.append(el('span', 'label-ask', 'What was it?'));
         for (const k of ['wanted me', 'accidental', 'urgent']) {
           const t = el('button', 'mini', OUTCOME_WORDS[k]);
           t.onclick = () => send({ cmd: 'label', id: e.id, outcome: k });
@@ -329,6 +389,9 @@ function renderHistory(child) {
 // ------------------------------------------------------------------ settings (#10)
 function renderSettings() {
   renderWalletSettings(S.wallet);
+  const n = (S.history || []).length;
+  $('s-hist-count').textContent = n ? `${n} entr${n === 1 ? 'y' : 'ies'}: past alerts, device events and their recordings` : 'Nothing to clear';
+  $('s-clear-history').disabled = !n;
   $('s-listen').checked = !!(S.listen && S.listen.on);
   $('s-listen').disabled = !(S.listen && S.listen.gemini);
   $('s-fall').checked = S.fall_check;

@@ -310,6 +310,8 @@ class Pixie:
             await self.set_listening(bool(cmd.get("on")))
         elif c == "wallet":
             await self.wallet.command(cmd)
+        elif c == "clear_history":
+            self.clear_history()
         elif c == "call" and a:
             self.timeline("%s called %s (simulated call)" % (cmd.get("by", GUARDIANS[0]["name"]),
                                                            cmd.get("who", GUARDIANS[1]["name"])))
@@ -548,6 +550,23 @@ class Pixie:
                     e.setdefault("timeline", []).append({"t": time.time(), "text": "Clip extended to %d s"
                                                          % (CLIP_BEFORE + CLIP_AFTER)})
             self.publish()
+
+    def clear_history(self):
+        """Delete past alerts, device events and their clips. An open alert is kept."""
+        keep = {self.active.get("audio")} if self.active else set()
+        removed = 0
+        for e in self.history:
+            name = e.get("audio")
+            if name and name not in keep and name.split("-")[0] in ("help", "distress", "anger"):
+                try:
+                    (self.rec_dir / name).unlink()
+                    removed += 1
+                except OSError:
+                    pass
+        count = len(self.history)
+        self.history = []
+        self.save()
+        print("  [pixie] history cleared: %d entries, %d clips" % (count, removed))
 
     def spawn(self, coro):
         self.tasks.append(asyncio.ensure_future(coro))

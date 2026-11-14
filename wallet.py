@@ -1,4 +1,4 @@
-﻿"""
+"""
 Pixie Card (DEMO ONLY): tap-to-pay pocket money on the band.
 
 Nothing here touches real money or a real card network. The "card" is a label, the shop is a
@@ -15,12 +15,12 @@ import time
 from pathlib import Path
 
 ITEMS = [
-    {"id": "lolly", "name": "Lollipop", "emoji": "ðŸ­", "price": 0.75, "cat": "snacks"},
-    {"id": "candy", "name": "Candy bar", "emoji": "ðŸ«", "price": 1.50, "cat": "snacks"},
-    {"id": "juice", "name": "Apple juice", "emoji": "ðŸ§ƒ", "price": 2.00, "cat": "drinks"},
-    {"id": "icecream", "name": "Ice cream", "emoji": "ðŸ¦", "price": 3.50, "cat": "snacks"},
-    {"id": "car", "name": "Toy car", "emoji": "ðŸš—", "price": 8.00, "cat": "toys"},
-    {"id": "game", "name": "Game card", "emoji": "ðŸŽ®", "price": 15.00, "cat": "games"},
+    {"id": "lolly", "name": "Lollipop", "emoji": "🍭", "price": 0.75, "cat": "snacks"},
+    {"id": "candy", "name": "Candy bar", "emoji": "🍫", "price": 1.50, "cat": "snacks"},
+    {"id": "juice", "name": "Apple juice", "emoji": "🧃", "price": 2.00, "cat": "drinks"},
+    {"id": "icecream", "name": "Ice cream", "emoji": "🍦", "price": 3.50, "cat": "snacks"},
+    {"id": "car", "name": "Toy car", "emoji": "🚗", "price": 8.00, "cat": "toys"},
+    {"id": "game", "name": "Game card", "emoji": "🎮", "price": 15.00, "cat": "games"},
 ]
 CATEGORIES = {"snacks": "Snacks & sweets", "drinks": "Drinks", "toys": "Toys", "games": "Games & apps"}
 REARM_SECONDS = 20        # how long the reader waits for a tap
@@ -77,6 +77,8 @@ class Wallet:
                                 "expires": time.time() + REARM_SECONDS, "message": "Tap your Pixie band on the reader"}
         elif act == "tap":                                   # shop's demo button = a band tap
             await self.on_tap()
+        elif act == "clear_tx":                              # parent clears the purchase list
+            d["tx"] = []
         elif act == "cancel":
             self.pending = None
         elif act == "decide":                                # parent answers an over-limit request
@@ -107,7 +109,7 @@ class Wallet:
 
     async def ask(self, p, why):
         p.update(state="asking", why=why, asked=time.time(),
-                 message="Asking %sâ€¦ (%s)" % (self.pixie.guardian, why))
+                 message="Asking %s… (%s)" % (self.pixie.guardian, why))
         self.pixie.log_line("%s asked to buy %s for $%.2f (%s)" % (self.pixie.child, p["item"]["name"],
                                                                   p["item"]["price"], why))
         self.pixie.publish()                                 # tell the pages first, then the light

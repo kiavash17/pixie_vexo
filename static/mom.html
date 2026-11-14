@@ -30,8 +30,13 @@
   <main>
     <!-- active alert: action first (#2), details folded -->
     <section id="alert" class="alert hidden" aria-live="assertive">
-      <div class="state-chip" id="a-chip">⚠ Needs you</div>
-      <h1 id="a-title">Maya wants you</h1>
+      <div class="a-head">
+        <div class="a-icon" id="a-icon">🙋</div>
+        <div>
+          <div class="state-chip" id="a-chip">⚠ Needs you</div>
+          <h1 id="a-title">Maya wants you</h1>
+        </div>
+      </div>
       <p class="reason" id="a-reason"></p>
       <p class="meta" id="a-meta"></p>
 
@@ -54,16 +59,17 @@
         <button class="btn primary" id="b-call">📞 Call Dad</button>
         <button class="btn secondary" id="b-handled">Mark as handled</button>
       </div>
+      <div class="ladder hidden" id="a-ladder"></div>
       <p class="next" id="a-next"></p>
 
       <!-- resolve sheet (#8 of first list, folded into the flow) -->
       <div class="sheet hidden" id="a-sheet">
         <p>Glad it's okay. What happened?</p>
         <div class="choices">
-          <button data-o="wanted me">Just wanted me</button>
-          <button data-o="accidental">Pocket tap</button>
-          <button data-o="urgent">Real problem</button>
-          <button data-o="">Skip</button>
+          <button data-o="wanted me"><span>👋</span>Just wanted me</button>
+          <button data-o="accidental"><span>🤚</span>Pocket tap</button>
+          <button data-o="urgent"><span>❗</span>Real problem</button>
+          <button data-o=""><span>⏭</span>Skip</button>
         </div>
       </div>
 
@@ -85,12 +91,15 @@
     </section>
 
     <!-- calm state (#8: neutral) -->
-    <section id="calm" class="calm">
-      <div class="calm-icon">✓</div>
-      <div>
-        <h1>All calm</h1>
-        <p id="calm-sub">Maya can double-tap the band whenever they need you.</p>
-        <p class="listening-line hidden" id="calm-listen"></p>
+    <section id="calm" class="hero">
+      <div class="ring" id="ring"><div class="face" id="hero-avatar">M</div><div class="okbadge">✓</div></div>
+      <h1 id="hero-title">Maya is OK</h1>
+      <p id="calm-sub">Double-tap the band = "I need you"</p>
+      <div class="tiles">
+        <div class="tile"><div class="gauge" id="t-bat"><span id="t-bat-v">–</span></div><label>Battery</label></div>
+        <div class="tile"><div class="bars" id="t-sig"><i></i><i></i><i></i><i></i></div><label id="t-sig-l">Distance</label></div>
+        <div class="tile"><div class="tile-ic" id="t-act">🧍</div><label id="t-act-l">Activity</label></div>
+        <div class="tile"><div class="tile-ic" id="t-listen">🎧</div><label id="t-listen-l">Listening</label></div>
       </div>
     </section>
 
@@ -184,6 +193,15 @@
     <div class="row static">
       <div><b id="s-band-name">Band</b><small id="s-band-detail">–</small></div>
       <button class="btn soft small" id="b-find">🔦 Find band</button>
+    </div>
+    <h3 class="section">Data</h3>
+    <div class="row static">
+      <div><b>Clear history</b><small id="s-hist-count">Past alerts, device events and their recordings</small></div>
+      <button class="btn danger small" id="s-clear-history">Clear</button>
+    </div>
+    <div class="row static">
+      <div><b>Clear purchases</b><small>Pixie Card purchase list (today's budget resets too)</small></div>
+      <button class="btn danger small" id="s-clear-tx">Clear</button>
     </div>
     <details class="device-log" id="device-log">
       <summary id="device-log-sum">Device &amp; app events</summary>

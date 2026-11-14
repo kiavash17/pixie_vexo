@@ -38,7 +38,7 @@ BAND = 6                                           # our band: Vexo-HACK-06
 PORT = 8765
 REC_DIR = ROOT / "recordings"
 SENSORS = dict(motion=50, events=True, activity=True, battery=10, temperature=2, link=True)
-PIXIE_COMMANDS = {"ack", "resolve", "label", "hug", "find", "simulate", "fall_check", "listen", "call", "wallet"}
+PIXIE_COMMANDS = {"ack", "resolve", "label", "hug", "find", "simulate", "fall_check", "listen", "call", "wallet", "clear_history"}
 DATA_EVENTS = ["motion", "event", "activity", "battery", "temperature", "link", "mic-level"]
 
 
