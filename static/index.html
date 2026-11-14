@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixie · Control Room</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">Pixie <span>control room</span></div>
+  <div id="status" class="pill idle">idle</div>
+  <div id="message" class="message"></div>
+  <div class="actions">
+    <button id="connect">Connect</button>
+    <button id="mic" disabled>Mic off</button>
+    <button id="listen">🔈 Listen live</button>
+  </div>
+</header>
+
+<section class="tiles">
+  <div class="tile"><label>Band</label><b id="t-band">–</b></div>
+  <div class="tile"><label>Battery</label><b id="t-battery">–</b></div>
+  <div class="tile"><label>Signal</label><b id="t-rssi">–</b></div>
+  <div class="tile"><label>Chip temp</label><b id="t-temp">–</b></div>
+  <div class="tile"><label>Steps</label><b id="t-steps">–</b></div>
+  <div class="tile"><label>Activity</label><b id="t-state">–</b></div>
+  <div class="tile"><label>Motion rate</label><b id="t-rate">–</b></div>
+  <div class="tile"><label>Audio</label><b id="t-audio">–</b></div>
+</section>
+
+<main>
+  <section class="panel transcript">
+    <h2>Live transcript <small id="engine"></small></h2>
+    <div id="lines"></div>
+    <div id="interim"></div>
+  </section>
+
+  <section class="charts">
+    <div class="panel"><h2>Accelerometer <small>g</small></h2><canvas id="c-accel"></canvas></div>
+    <div class="panel"><h2>Gyroscope <small>°/s</small></h2><canvas id="c-gyro"></canvas></div>
+    <div class="panel"><h2>Mic loudness <small>dB below full scale (up = louder)</small></h2><canvas id="c-mic"></canvas></div>
+    <div class="panel half"><h2>Chip temperature <small>°C</small></h2><canvas id="c-temp"></canvas></div>
+    <div class="panel half"><h2>Signal <small>dBm</small></h2><canvas id="c-rssi"></canvas></div>
+  </section>
+
+  <section class="panel events">
+    <h2>Gestures &amp; events</h2>
+    <ul id="events"></ul>
+  </section>
+
+  <section class="panel recordings">
+    <h2>Recordings</h2>
+    <div class="row">
+      <button id="play-session">▶ This session</button>
+      <a id="dl-session" class="btn" download="session.wav">⬇ WAV</a>
+      <span id="session-len">0.0 s</span>
+    </div>
+    <audio id="player" controls></audio>
+    <h3>Saved on server</h3>
+    <ul id="files"></ul>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

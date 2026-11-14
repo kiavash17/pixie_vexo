@@ -2,3 +2,4 @@ vexo-open-kit/
 .env
 *.ogg
 __pycache__/
+recordings/

@@ -8,6 +8,23 @@ over Bluetooth and reads every sensor plus the microphone.
 - **Phase 2 (10 s):** microphone on (the band's light is solid blue), loudness meter, voice
   saved to `hello.ogg`, and a live transcript through Deepgram when a key is set.
 
+## Control room (`server.py`)
+
+A live diagnostic page for the band: live transcript, accelerometer / gyroscope / mic
+loudness / chip temperature / signal charts, gesture log, live audio playback, and every
+mic session saved to `recordings/*.ogg`. The terminal prints one parsed line per second.
+
+```
+python server.py          # then open http://localhost:8765, double-tap the band, press Connect
+python server.py --sim    # pretend band
+```
+
+The server holds the band (Bluetooth) and the Deepgram key; the page only gets data over a
+WebSocket (works through `https` tunnels too). Sentences are split on Deepgram's
+`UtteranceEnd` as well as silence, so the transcript works in a noisy room.
+
+Needs `aiohttp` as well: `python -m pip install aiohttp`.
+
 ## Setup
 
 ```
