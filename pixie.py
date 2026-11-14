@@ -89,6 +89,7 @@ class Pixie:
         self.steps_start = None
         self.rec_dir = data_dir.parent / "recordings"
         self.listening = False
+        self.listen_wanted = True          # Listening mode is ON by default (turns on when the band connects)
         self.listen = {"last": None, "t": None, "quiet": True, "error": None}
         self.recent = collections.deque(maxlen=3)
         self.convo = collections.deque(maxlen=60)          # (time, words) heard in listening mode
@@ -241,6 +242,8 @@ class Pixie:
             asyncio.ensure_future(self.apply_led())
             if self.listening and not self.hub.status["mic"]:
                 asyncio.ensure_future(self.hub.set_mic(True, record=False))
+            elif self.listen_wanted and not self.listening and gemini.available():
+                asyncio.ensure_future(self.set_listening(True))   # on by default
         else:
             self.notice = "%s's band is offline: alerts can't reach you" % CHILD
             self.listen_in = None
@@ -449,7 +452,8 @@ class Pixie:
             else:
                 await self.apply_led()
         elif c == "listen":
-            await self.set_listening(bool(cmd.get("on")))
+            self.listen_wanted = bool(cmd.get("on"))         # remembered across reconnects
+            await self.set_listening(self.listen_wanted)
         elif c == "wallet":
             await self.wallet.command(cmd)
         elif c == "clear_history":
