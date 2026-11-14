@@ -54,4 +54,4 @@ Mention in one line each if time allows: Listen in / Live captions, quiet-time c
 - **Warm up the AI notes** so they appear instantly: open *Rough day* and *Patterns* once beforehand.
 - **Test clips:** regenerate them if needed with `python tests/make_test_audio.py testaudio` (Gemini TTS). Practise playing them at a volume the band hears.
 - **Backup:** if the band or Wi-Fi fails, `/mom?demo=1` has buttons that simulate every event.
-- **Privacy line for judges:** the blue light always shows when the mic is on; alert clips are kept, and nothing else is recorded unless a guardian turns it on.
+- **Privacy line for judges:** the blue light always shows when the mic is on. Audio is kept only as short clips around alerts; the words heard are saved as a transcript while Listening mode is on (the default), and a parent can turn it off or clear history at any time. A real product needs consent from the people nearby.
