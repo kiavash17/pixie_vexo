@@ -99,7 +99,7 @@
         <div class="tile"><div class="gauge" id="t-bat"><span id="t-bat-v">–</span></div><label>Battery</label></div>
         <div class="tile"><div class="bars" id="t-sig"><i></i><i></i><i></i><i></i></div><label id="t-sig-l">Distance</label></div>
         <div class="tile"><div class="tile-ic" id="t-act">🧍</div><label id="t-act-l">Activity</label><b class="tile-num" id="t-steps"></b></div>
-        <div class="tile"><div class="tile-ic" id="t-listen">🎧</div><label id="t-listen-l">Listening</label></div>
+        <button class="tile listen-tile" id="t-listen-btn" aria-pressed="false"><div class="tile-ic" id="t-listen">🎧</div><label id="t-listen-l">Listening</label><b class="tile-num" id="t-listen-sw">Off</b></button>
         <button class="tile money-tile" id="t-money"><div class="gauge" id="t-money-g"><span id="t-money-v">💳</span></div><label id="t-money-l">Pixie Card</label></button>
       </div>
     </section>
@@ -128,11 +128,11 @@
         </div>
       </div>
       <div class="pcard hidden" id="w-card">
-        <div class="pcard-top"><span>✦ Pixie Card</span><span class="demo-tag">DEMO</span></div>
+        <div class="pcard-top"><span>✦ Pixie Card</span><span>📶</span></div>
         <div class="pcard-left"><span id="w-left">$10.00</span> left today</div>
         <div class="pbar"><i id="w-bar"></i></div>
         <div class="pcard-spent" id="w-spent">Spent $0.00 of $10.00</div>
-        <div class="pcard-bottom"><span id="w-name">MAYA</span><span>•••• DEMO</span></div>
+        <div class="pcard-bottom"><span id="w-name">MAYA</span><span id="w-last4">•••• 0606</span></div>
         <div class="paused hidden" id="w-paused">⏸ Paused</div>
       </div>
       <div class="wstats hidden" id="w-stats">
@@ -182,7 +182,7 @@
       <div><b>Alert sounds</b><small id="s-sound">Off</small></div>
       <button class="btn soft small" id="s-sound-btn">Test sound</button>
     </div>
-    <h3 class="section" id="s-card">💳 Pixie Card (demo)</h3>
+    <h3 class="section" id="s-card">💳 Pixie Card</h3>
     <div class="row static">
       <div><b>Daily budget</b><small>Most Maya can spend in a day</small></div>
       <span class="money">$<input type="number" id="s-daily" min="0" max="500" step="0.5"></span>

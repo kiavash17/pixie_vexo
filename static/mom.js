@@ -113,6 +113,7 @@ function openSettings(anchor) {
   if (anchor) setTimeout(() => $(anchor).scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 }
 $('w-edit').onclick = () => openSettings('s-card');
+$('t-listen-btn').onclick = () => send({ cmd: 'listen', on: !(S && S.listen && S.listen.on) });
 $('t-money').onclick = () => (S && S.wallet && S.wallet.card ? $('wallet').scrollIntoView({ behavior: 'smooth' }) : openSettings('s-card'));
 let lastAskId = null;
 function renderWallet(W, child) {
@@ -135,6 +136,7 @@ function renderWallet(W, child) {
     $('w-bar').style.width = `${W.daily ? Math.min(100, (W.left_today / W.daily) * 100) : 0}%`;
     $('w-spent').textContent = `Spent ${money(W.spent_today)} of ${money(W.daily)} today`;
     $('w-name').textContent = W.card.name.toUpperCase();
+    $('w-last4').textContent = `•••• ${W.card.last4 === 'DEMO' ? '0606' : W.card.last4}`;
     $('w-paused').classList.toggle('hidden', !W.frozen);
     $('w-per').textContent = money(W.per_purchase).replace('.00', '');
     $('w-cats').textContent = Object.entries(W.categories).filter(([, on]) => on).map(([k]) => CAT_ICON[k] || '•').join('') || '—';
@@ -237,6 +239,11 @@ function renderCalm(child) {
   $('t-listen').textContent = !L.on ? '🔇' : worry ? '👂' : '🎧';
   $('t-listen').classList.toggle('off', !L.on);
   $('t-listen-l').textContent = !L.on ? 'Not listening' : worry ? 'Heard something' : 'All quiet';
+  const lb = $('t-listen-btn');
+  lb.classList.toggle('on', !!L.on);
+  lb.setAttribute('aria-pressed', L.on ? 'true' : 'false');
+  lb.disabled = !L.gemini || !b.connected;
+  $('t-listen-sw').textContent = !L.gemini ? 'No key' : L.on ? 'On · tap off' : 'Tap to listen';
 }
 
 let lastAlertId = null;

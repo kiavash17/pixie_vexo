@@ -60,8 +60,8 @@ class Wallet:
         act = cmd.get("action")
         d = self.data
         if act == "create_card":
-            d["card"] = {"name": self.pixie.child, "label": "Pixie Card", "last4": "DEMO", "created": time.time()}
-            self.pixie.log_line("%s created %s's Pixie Card (demo)" % (self.pixie.guardian, self.pixie.child))
+            d["card"] = {"name": self.pixie.child, "label": "Pixie Card", "last4": "0606", "created": time.time()}
+            self.pixie.log_line("%s created %s's Pixie Card" % (self.pixie.guardian, self.pixie.child))
         elif act == "set":
             for k in ("daily", "per_purchase"):
                 if k in cmd:

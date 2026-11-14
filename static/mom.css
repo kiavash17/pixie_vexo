@@ -181,7 +181,11 @@ main { padding: 14px; display: grid; gap: 14px; }
 .tiles { grid-template-columns: repeat(5, 1fr) !important; gap: 6px !important; }
 .tile { padding: 10px 2px 8px !important; }
 .tile-num { font-size: 11px; color: var(--ink); margin-top: -4px; }
-.money-tile { border: 0; cursor: pointer; font: inherit; color: inherit; }
+.money-tile, .listen-tile { border: 0; cursor: pointer; font: inherit; color: inherit; }
+.listen-tile { border: 2px solid transparent; }
+.listen-tile.on { background: #e8eeff; border-color: #4d7cff; }
+.listen-tile.on .tile-num { color: #1f4fbf; }
+.listen-tile:disabled { cursor: default; opacity: .6; }
 .money-tile .gauge span { font-size: 10px; }
 .tx .em { font-size: 30px; line-height: 1.1; }
 .tx .amt { font-weight: 800; font-size: 13px; } .tx .no { color: var(--red); }
