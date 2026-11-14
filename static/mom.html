@@ -65,12 +65,7 @@
       <!-- resolve sheet (#8 of first list, folded into the flow) -->
       <div class="sheet hidden" id="a-sheet">
         <p>Glad it's okay. What happened?</p>
-        <div class="choices">
-          <button data-o="wanted me"><span>👋</span>Just wanted me</button>
-          <button data-o="accidental"><span>🤚</span>Pocket tap</button>
-          <button data-o="urgent"><span>❗</span>Real problem</button>
-          <button data-o=""><span>⏭</span>Skip</button>
-        </div>
+        <div class="choices" id="a-choices"></div>
       </div>
 
       <div class="chips" id="a-chips"></div>
@@ -102,6 +97,13 @@
         <button class="tile listen-tile" id="t-listen-btn" aria-pressed="false"><div class="tile-ic" id="t-listen">🎧</div><label id="t-listen-l">Listening</label><b class="tile-num" id="t-listen-sw">Off</b></button>
         <button class="tile money-tile" id="t-money"><div class="gauge" id="t-money-g"><span id="t-money-v">💳</span></div><label id="t-money-l">Pixie Card</label></button>
       </div>
+    </section>
+
+    <!-- who's around: visible in calm AND during alerts -->
+    <section class="nearby" id="nearby">
+      <div class="nearby-l">👂 Around <span class="w-child">Maya</span></div>
+      <div class="people" id="people"></div>
+      <div class="nearby-t" id="nearby-t">Listening for voices…</div>
     </section>
 
     <section class="quick" id="quick">

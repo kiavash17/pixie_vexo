@@ -48,7 +48,8 @@ LED = {                                   # (colour, pattern, period ms); mic-on
 }
 URGENT_WORDS = ("hurt", "help", "lost", "scared", "stranger", "bleeding", "fell", "fall", "can't find",
                 "emergency", "pain", "afraid", "crying", "come now", "hurry")
-OUTCOMES = ("accidental", "wanted me", "urgent", "ok")
+# outcome labels a guardian can give (the page offers the ones that fit each kind of event)
+OUTCOMES = ("accidental", "wanted me", "urgent", "ok", "misheard", "hurt", "dropped", "small upset", "loud", "safe")
 
 # Listening mode (Gemini hears 5 s windows; only windows with sound are sent)
 WINDOW = 5
@@ -94,6 +95,7 @@ class Pixie:
         self.recent = collections.deque(maxlen=3)
         self.convo = collections.deque(maxlen=60)          # (time, words) heard in listening mode
         self.concern_quotes = collections.deque(maxlen=12)  # (time, adult's worrying words)
+        self.voice_windows = collections.deque(maxlen=60)   # (time, children, adults) per listening window
         self.last_anger_note = 0.0
         self.child, self.guardian = CHILD, GUARDIANS[0]["name"]
         self.wallet = Wallet(self, data_dir / "wallet.json")
@@ -133,7 +135,7 @@ class Pixie:
             "notice": self.notice, "fall_check": self.fall_check,
             "wallet": self.wallet.snapshot(),
             "nudge": self.nudge, "quiet_minutes": self.quiet_minutes, "listen_in": self.listen_in,
-            "gesture": self.gesture, "captions": self.captions,
+            "gesture": self.gesture, "captions": self.captions, "nearby": self.nearby(),
             "todos": [t for t in self.todos if not t.get("deleted")][-40:][::-1],
             "last_social": self.last_social if self.listening else None,
             "listen": dict(self.listen, on=self.listening, gemini=gemini.available(),
@@ -727,6 +729,17 @@ class Pixie:
             r["loudest_db"] = loud
             self.on_listen(r)
 
+    def nearby(self):
+        """Who Pixie heard around the child: the most voices in any window of the last 30 s
+        (one 5 s window only catches whoever spoke in it). Children include the wearer."""
+        now = time.time()
+        seen = [w for w in self.voice_windows if now - w[0] <= 30]
+        if not seen:
+            last = self.voice_windows[-1] if self.voice_windows else None
+            return {"children": 0, "adults": 0, "t": last[0] if last else None, "recent": False}
+        return {"children": max(w[1] for w in seen), "adults": max(w[2] for w in seen),
+                "t": seen[-1][0], "recent": True}
+
     def peak(self, key):
         """Strongest score for `key` in the recent windows (what triggered the alert)."""
         return max([x.get(key, 0.0) for x in self.recent] or [0.0])
@@ -743,6 +756,8 @@ class Pixie:
         r.setdefault("concern", "")
         self.listen.update(last=r, t=now, quiet=False, error=None)
         self.recent.append(r)
+        if r.get("children", 0) or r.get("adults", 0):
+            self.voice_windows.append((now, int(r.get("children", 0)), int(r.get("adults", 0))))
         if r.get("transcript"):
             self.convo.append((now, r["transcript"]))
             # the wearer talking WITH someone: the wearer + another child or an adult, with words

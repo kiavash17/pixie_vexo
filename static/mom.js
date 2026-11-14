@@ -37,7 +37,20 @@ function plain(text) {
     .replace(/: \(simulated[^)]*\)$/i, '')
     .trim();
 }
-const OUTCOME_WORDS = { 'wanted me': '👋 Just wanted me', accidental: '🤚 Pocket tap', urgent: '❗ Real problem', ok: '👍 Said OK' };
+/** Outcome choices per kind of event: [stored value, icon, words]. The serious one is always 'urgent'. */
+const OUTCOMES = {
+  help: [['wanted me', '👋', 'Just wanted me'], ['accidental', '🤚', 'Pocket tap'], ['urgent', '❗', 'Real problem']],
+  voice: [['wanted me', '👋', 'Just wanted me'], ['misheard', '🔇', "Wasn't calling"], ['urgent', '❗', 'Real problem']],
+  fall: [['ok', '👍', 'Was fine'], ['hurt', '🤕', 'Got hurt'], ['dropped', '📉', 'Just dropped the band']],
+  cry: [['small upset', '🙂', 'Small upset'], ['urgent', '💔', 'Really upset'], ['misheard', '🔇', "Wasn't crying"]],
+  anger: [['loud', '🔊', 'Just loud'], ['urgent', '⚠️', 'Worrying'], ['misheard', '🔇', 'Misheard']],
+  danger: [['safe', '✅', 'Safe, I know them'], ['urgent', '🚨', 'Real concern'], ['misheard', '🔇', 'Misheard']],
+};
+function outcomeWords(e, value) {
+  const list = OUTCOMES[eventKind(e)] || OUTCOMES.help;
+  const hit = list.find(([v]) => v === value) || Object.values(OUTCOMES).flat().find(([v]) => v === value);
+  return hit ? `${hit[1]} ${hit[2]}` : value;
+}
 const SIGNAL_WORDS = { crying: '😢 Crying', screaming: '😱 Screaming', adult_anger: '😠 Angry adult', adult_concerning: '⚠ Worrying adult' };
 
 // ------------------------------------------------------------------ sound (#7)
@@ -103,6 +116,7 @@ function render() {
   renderWallet(S.wallet, child);
   renderNudge(child);
   renderListenIn(child);
+  renderNearby(child);
   renderCaptions();
   renderTodos();
   renderSettings();
@@ -140,6 +154,48 @@ $('b-listen-in').onclick = () => {
   send({ cmd: 'listen_in', on: !(S && S.listen_in), by: 'Mom' });
 };
 $('live-stop').onclick = () => send({ cmd: 'listen_in', on: false });
+
+// ------------------------------------------------------------------ who's around (Gemini voice counts)
+let peopleKey = '';
+function renderNearby(child) {
+  const n = S.nearby || {}, L = S.listen || {};
+  const box = $('nearby');
+  if (!L.on) {
+    box.className = 'nearby stale'; $('people').replaceChildren();
+    $('nearby-t').textContent = 'Turn on Listening to see who is around';
+    return;
+  }
+  const others = Math.max(0, (n.children || 0) - 1);           // the wearer is one of the children heard
+  const adults = n.adults || 0;
+  const fresh = n.recent && n.t && Date.now() / 1000 - n.t < 120;
+  box.className = `nearby ${fresh ? '' : 'stale'}`;
+  const key = `${fresh}|${others}|${adults}`;
+  if (key !== peopleKey) {                                    // only rebuild (and animate) when it changes
+    peopleKey = key;
+    const nodes = [];
+    const me = el('div', 'person me'); me.append(el('span', 'me-face', child[0]), el('small', '', child)); nodes.push(me);
+    if (fresh && (others || adults)) nodes.push(el('span', 'sep'));
+    const add = (count, icons, cls, label) => {
+      for (let i = 0; i < Math.min(count, 5); i++) {
+        const p = el('div', `person ${cls}`);
+        p.append(document.createTextNode(icons[i % icons.length]), el('small', '', i === 0 ? `${count} ${label}` : ''));
+        nodes.push(p);
+      }
+      if (count > 5) nodes.push(el('span', 'more', `+${count - 5}`));
+    };
+    if (fresh) {
+      add(others, ['👧', '👦'], 'kid', others === 1 ? 'child' : 'children');
+      add(adults, ['👩', '👨'], 'adult', adults === 1 ? 'adult' : 'adults');
+    }
+    $('people').replaceChildren(...nodes);
+  }
+  const words = [];
+  if (others) words.push(`${others} other ${others === 1 ? 'child' : 'children'}`);
+  if (adults) words.push(`${adults} ${adults === 1 ? 'adult' : 'adults'}`);
+  $('nearby-t').textContent = !fresh
+    ? (n.t ? `No voices heard recently (last ${ago(n.t)})` : 'No voices heard yet')
+    : words.length ? `${words.join(' · ')} · heard ${ago(n.t)}` : `Only ${child} heard · ${ago(n.t)}`;
+}
 
 // ------------------------------------------------------------------ live captions
 const capLines = [];
@@ -502,6 +558,9 @@ function renderCalm(child) {
 let lastAlertId = null;
 function renderAlert(a, child) {
   if (a.id !== lastAlertId) { lastAlertId = a.id; lastChime = 0; $('a-sheet').classList.add('hidden'); $('a-audio').removeAttribute('src'); $('a-details').open = false; }
+  $('b-allgood').textContent = { fall: "They're OK", danger: 'Resolve' }[eventKind(a)] || 'All good';
+  const choicesKey = `${a.id}|${eventKind(a)}`;
+  if ($('a-choices').dataset.key !== choicesKey) { $('a-choices').dataset.key = choicesKey; renderChoices(a); }
   const urgent = a.level >= 2;
   const now = Date.now() / 1000;
   const waiting = ['listening', 'waiting'].includes(a.state);
@@ -567,8 +626,7 @@ function renderAlert(a, child) {
   renderLadder(a, waiting && !stalled, now);
 
   // evidence chips in plain words
-  const chips = [];
-  if (a.voices && (a.voices.children || a.voices.adults)) chips.push(`👧 ${a.voices.children}  ·  🧑 ${a.voices.adults} nearby`);
+  const chips = [];                               // who's around is shown in its own strip below the card
   if (a.signals) for (const [k, v] of Object.entries(a.signals)) {
     if (v >= 0.6 && SIGNAL_WORDS[k] && !(danger && k === 'adult_concerning')) chips.push(SIGNAL_WORDS[k]);
   }
@@ -684,10 +742,10 @@ function renderHistory(child) {
     }
     if (!['note', 'alone'].includes(e.kind)) {
       if (e.outcome) {
-        const o = el('span', 'outcome'); o.append(el('b', '', OUTCOME_WORDS[e.outcome] || e.outcome)); foot.append(o);
+        const o = el('span', 'outcome'); o.append(el('b', '', outcomeWords(e, e.outcome))); foot.append(o);
       } else {
-        for (const k of ['wanted me', 'accidental', 'urgent']) {
-          const t = el('button', 'mini', OUTCOME_WORDS[k]);
+        for (const [k, icon, words] of OUTCOMES[eventKind(e)] || OUTCOMES.help) {
+          const t = el('button', 'mini', `${icon} ${words}`);
           t.onclick = () => send({ cmd: 'label', id: e.id, outcome: k });
           foot.append(t);
         }
@@ -737,9 +795,15 @@ $('b-coming').onclick = () => send({ cmd: 'ack', by: 'Mom' });
 $('b-allgood').onclick = () => $('a-sheet').classList.toggle('hidden');
 $('b-handled').onclick = () => $('a-sheet').classList.remove('hidden');
 $('b-call').onclick = () => send({ cmd: 'call', by: 'Mom', who: S.guardians[1].name });
-document.querySelectorAll('#a-sheet button').forEach((b) => {
-  b.onclick = () => send({ cmd: 'resolve', by: 'Mom', outcome: b.dataset.o || null });
-});
+/** The "what happened?" choices fit the kind of event (a fall is not a "pocket tap"). */
+function renderChoices(a) {
+  const list = [...(OUTCOMES[eventKind(a)] || OUTCOMES.help), ['', '⏭', 'Skip']];
+  $('a-choices').replaceChildren(...list.map(([v, icon, words]) => {
+    const b = el('button'); b.append(el('span', '', icon), document.createTextNode(words));
+    b.onclick = () => send({ cmd: 'resolve', by: 'Mom', outcome: v || null });
+    return b;
+  }));
+}
 $('b-hug').onclick = () => send({ cmd: 'hug' });
 $('b-find').onclick = () => send({ cmd: 'find' });
 if (DEMO) {

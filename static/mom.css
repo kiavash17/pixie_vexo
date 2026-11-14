@@ -310,6 +310,23 @@ main { padding: 14px; display: grid; gap: 14px; }
 .quick { grid-template-columns: 1fr 1fr 1fr !important; gap: 8px !important; }
 .quick .btn { padding: 12px 6px; font-size: 14px; }
 
+/* ---------- who's around ---------- */
+.nearby { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; display: grid; gap: 6px; text-align: left; }
+.nearby-l { font-size: 12px; font-weight: 800; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+.people { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; min-height: 40px; }
+.person { display: grid; justify-items: center; font-size: 30px; line-height: 1; animation: pop .3s ease-out; }
+.person small { font-size: 10px; color: var(--dim); font-weight: 700; margin-top: 2px; }
+.me-face { width: 34px; height: 34px; border-radius: 50%; background: #ffd166; color: #4a3300; display: grid; place-items: center;
+           font-size: 17px; font-weight: 800; border: 3px solid #2fbf71; }
+.person.kid { font-size: 28px; }
+.person.me small { color: var(--green); }
+.person.adult { font-size: 36px; }
+.people .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
+.people .more { font-size: 14px; font-weight: 800; color: var(--dim); align-self: center; }
+.nearby-t { font-size: 13px; color: var(--ink); font-weight: 600; }
+.nearby.stale .people { opacity: .4; } .nearby.stale .nearby-t { color: var(--dim); font-weight: 400; }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
 /* ---------- live captions ---------- */
 .captions { background: #1b1830; color: #fff; border-radius: 18px; padding: 12px 14px; }
 .cap-head { display: flex; align-items: center; gap: 8px; }
