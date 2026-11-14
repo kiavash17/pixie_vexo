@@ -39,7 +39,8 @@ PORT = 8765
 REC_DIR = ROOT / "recordings"
 SENSORS = dict(motion=50, events=True, activity=0.5, battery=10, temperature=2, link=True)   # steps 2x/s
 PIXIE_COMMANDS = {"ack", "resolve", "label", "hug", "find", "simulate", "fall_check", "listen", "call", "wallet", "clear_history",
-                  "quiet_check", "nudge_dismiss", "day", "listen_in", "gesture"}
+                  "quiet_check", "nudge_dismiss", "day", "listen_in", "gesture",
+                  "captions", "todo_done", "todo_delete", "trends"}
 DATA_EVENTS = ["motion", "event", "activity", "battery", "temperature", "link", "mic-level"]
 
 
@@ -376,6 +377,19 @@ async def on_startup(app):
     asyncio.ensure_future(hub.connect())
     asyncio.ensure_future(hub.monitor())
     asyncio.ensure_future(hub.pixie.listen_loop())
+    asyncio.ensure_future(hub.pixie.actions_loop())
+
+
+async def transcript_handler(request):
+    """The full-day transcript: /api/transcript?which=today|typical|rough (or date=YYYY-MM-DD)."""
+    import daylog
+    pixie = request.app["hub"].pixie
+    which = request.query.get("which", "today")
+    if which in ("typical", "rough"):
+        lines = daylog.sample_transcript(which)
+    else:
+        lines = pixie.transcripts.lines(request.query.get("date"))
+    return web.json_response({"which": which, "lines": lines})
 
 
 async def no_cache(request, response):             # always serve the newest page code
@@ -400,6 +414,7 @@ def main():
     app.router.add_get("/", lambda r: web.FileResponse(ROOT / "static" / "index.html"))
     app.router.add_get("/mom", lambda r: web.FileResponse(ROOT / "static" / "mom.html"))
     app.router.add_get("/shop", lambda r: web.FileResponse(ROOT / "static" / "shop.html"))
+    app.router.add_get("/api/transcript", transcript_handler)
     REC_DIR.mkdir(exist_ok=True)
     app.router.add_static("/recordings/", REC_DIR)
     app.router.add_static("/static/", ROOT / "static")

@@ -103,6 +103,8 @@ function render() {
   renderWallet(S.wallet, child);
   renderNudge(child);
   renderListenIn(child);
+  renderCaptions();
+  renderTodos();
   renderSettings();
 }
 
@@ -138,6 +140,147 @@ $('b-listen-in').onclick = () => {
   send({ cmd: 'listen_in', on: !(S && S.listen_in), by: 'Mom' });
 };
 $('live-stop').onclick = () => send({ cmd: 'listen_in', on: false });
+
+// ------------------------------------------------------------------ live captions
+const capLines = [];
+function onCaption(m) {
+  if (!S || !S.captions) return;
+  if (!m.final) { $('cap-interim').textContent = m.text; return; }
+  $('cap-interim').textContent = '';
+  capLines.push({ t: Date.now() / 1000, text: m.text });
+  while (capLines.length > 8) capLines.shift();
+  $('cap-lines').replaceChildren(...capLines.map((l) => {
+    const p = el('p'); p.append(el('time', '', clockTime(l.t)), document.createTextNode(l.text)); return p;
+  }));
+  $('cap-lines').scrollTop = $('cap-lines').scrollHeight;
+}
+function renderCaptions() {
+  $('captions').classList.toggle('hidden', !S.captions);
+  $('b-captions').textContent = S.captions ? '📝 Captions on' : '📝 Captions';
+  $('b-captions').disabled = !S.band.connected;
+}
+$('b-captions').onclick = () => send({ cmd: 'captions', on: !(S && S.captions) });
+$('cap-stop').onclick = () => send({ cmd: 'captions', on: false });
+
+// ------------------------------------------------------------------ for Mom & Dad (to-dos from what others said)
+let lastTodoId = null;
+function renderTodos() {
+  const list = S.todos || [];
+  $('todos').classList.toggle('hidden', !list.length);
+  const open = list.filter((t) => !t.done);
+  $('todo-count').textContent = open.length ? `${open.length} to do` : 'all done ✓';
+  if (list[0] && list[0].id !== lastTodoId) { if (lastTodoId !== null) chime(1); lastTodoId = list[0].id; }
+  const sorted = [...open, ...list.filter((t) => t.done)];
+  $('todo-list').replaceChildren(...sorted.map((t) => {
+    const li = el('li', t.done ? 'done' : '');
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = !!t.done;
+    cb.onchange = () => send({ cmd: 'todo_done', id: t.id, done: cb.checked });
+    const body = el('div', 'todo-body');
+    body.append(el('b', '', t.action + (t.when ? ` · ${t.when}` : '')),
+      el('small', '', `${t.who.charAt(0).toUpperCase() + t.who.slice(1)} · ${clockTime(t.t)}${t.quote ? ` · “${t.quote}”` : ''}`));
+    const del = el('button', 'todo-del', '✕'); del.title = 'Remove';
+    del.onclick = () => send({ cmd: 'todo_delete', id: t.id });
+    li.append(cb, body, del);
+    return li;
+  }));
+}
+
+// ------------------------------------------------------------------ full-day transcript (backseat)
+let trWhich = 'today', trLines = [];
+async function openTranscript(which) {
+  trWhich = which || 'today';
+  $('tr').classList.remove('hidden');
+  document.querySelectorAll('#tr-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tr === trWhich));
+  $('tr-title').textContent = `${S ? S.child : 'Maya'}'s transcript`;
+  $('tr-lines').replaceChildren(el('p', 'empty', 'Loading…'));
+  const r = await fetch(`/api/transcript?which=${trWhich}`);
+  trLines = (await r.json()).lines || [];
+  renderTranscript();
+}
+function renderTranscript() {
+  const q = $('tr-search').value.trim().toLowerCase();
+  const lines = trLines.filter((l) => !q || l.text.toLowerCase().includes(q));
+  const nodes = [];
+  let hour = null;
+  for (const l of lines) {
+    const h = new Date(l.t * 1000).getHours();
+    if (h !== hour) { hour = h; nodes.push(el('div', 'day', `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`)); }
+    const p = el('p', 'tr-line'); p.append(el('time', '', clockTime(l.t)), document.createTextNode(l.text));
+    nodes.push(p);
+  }
+  if (!nodes.length) nodes.push(el('p', 'empty', q ? 'No matches.' : 'Nothing recorded yet today. Turn on Listening mode or Captions.'));
+  $('tr-lines').replaceChildren(...nodes);
+}
+$('tr-search').oninput = renderTranscript;
+document.querySelectorAll('#tr-tabs button').forEach((b) => { b.onclick = () => openTranscript(b.dataset.tr); });
+$('tr-close').onclick = () => $('tr').classList.add('hidden');
+$('tr').onclick = (e) => { if (e.target === $('tr')) $('tr').classList.add('hidden'); };
+$('open-transcript').onclick = () => openTranscript('today');
+$('day-transcript').onclick = () => openTranscript(dayWhich || 'today');
+
+// ------------------------------------------------------------------ patterns vs baseline (weeks / months)
+let ptView = 'weeks';
+function openPatterns(view) {
+  ptView = view || 'weeks';
+  $('pt').classList.remove('hidden');
+  document.querySelectorAll('#pt-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.pt === ptView));
+  $('pt-ai').replaceChildren(el('span', 'pulse'), document.createTextNode(' Looking for patterns…'));
+  send({ cmd: 'trends', view: ptView });
+}
+function spark(series, low, high, flag) {
+  const w = 120, h = 34, max = Math.max(...series, high) * 1.1 || 1, min = Math.min(0, ...series);
+  const y = (v) => h - ((v - min) / (max - min)) * h;
+  const pts = series.map((v, i) => `${(i / (series.length - 1)) * w},${y(v).toFixed(1)}`).join(' ');
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', `0 0 ${w} ${h}`); svg.setAttribute('class', 'spark');
+  const band = document.createElementNS(ns, 'rect');
+  band.setAttribute('x', 0); band.setAttribute('width', w); band.setAttribute('y', y(high)); band.setAttribute('height', Math.max(1, y(low) - y(high)));
+  band.setAttribute('class', 'band');
+  const line = document.createElementNS(ns, 'polyline'); line.setAttribute('points', pts); line.setAttribute('class', flag ? 'ln flag' : 'ln');
+  const last = series.length - 1, dot = document.createElementNS(ns, 'circle');
+  dot.setAttribute('cx', w); dot.setAttribute('cy', y(series[last])); dot.setAttribute('r', 3); dot.setAttribute('class', flag ? 'dot flag' : 'dot');
+  svg.append(band, line, dot);
+  return svg;
+}
+function renderTrends(d) {
+  if (d.view !== ptView) return;
+  const per = d.unit === 'week' ? 'this week' : 'this month';
+  $('pt-title').textContent = `${d.child}'s patterns`;
+  $('pt-sub').textContent = `${per[0].toUpperCase() + per.slice(1)} compared with ${d.child}'s own baseline (the ${d.baseline_periods} ${d.unit}s before)${d.example ? ' · example data' : ''}.`;
+  const row = (m, isMention) => {
+    const r = el('div', `pt-row ${m.flag ? 'flag' : m.better ? 'better' : ''}`);
+    const left = el('div', 'pt-l');
+    left.append(el('span', 'pt-ic', m.icon), el('div', '', ''));
+    const fmt = (v) => (v >= 100 ? Math.round(v).toLocaleString() : String(Math.round(v * 10) / 10));
+    left.lastChild.append(el('b', '', m.label), el('small', '', `usually ${fmt(m.low)}–${fmt(m.high)}${m.unit ? ' ' + m.unit : ''}`));
+    const right = el('div', 'pt-r');
+    const now = el('b', 'pt-now', `${typeof m.now === 'number' && m.now > 999 ? m.now.toLocaleString() : m.now}`);
+    const tag = m.flag ? (isMention ? '⬆ more than usual' : '⚠ outside usual') : m.better ? '✓ better' : 'normal';
+    right.append(now, el('small', `pt-tag ${m.flag ? 'warn' : ''}`, tag));
+    r.append(left, spark(m.series, m.low, m.high, m.flag), right);
+    return r;
+  };
+  $('pt-metrics').replaceChildren(...d.metrics.map((m) => row(m, false)));
+  $('pt-mentions').replaceChildren(...d.mentions.map((m) => row(m, true)));
+  const ai = d.ai;
+  if (ai && !ai.error) {
+    const nodes = [el('p', 'pt-sum', ai.summary)];
+    for (const p of ai.patterns || []) {
+      const c = el('div', `pt-card ${p.kind}`);
+      c.append(el('b', '', `${{ health: '🩺', anxiety: '😟', isolation: '🫥', activity: '🏃', positive: '🌟' }[p.kind] || '•'} ${p.title}`),
+        el('p', '', p.detail), el('p', 'pt-sug', `→ ${p.suggest}`));
+      nodes.push(c);
+    }
+    nodes.push(el('p', 'tr-note', 'Pixie points out patterns; it does not diagnose. Talk to your pediatrician about health worries.'));
+    $('pt-ai').replaceChildren(...nodes);
+  } else if (ai && ai.error) {
+    $('pt-ai').textContent = 'Patterns couldn\'t be written just now.';
+  }
+}
+document.querySelectorAll('#pt-tabs button').forEach((b) => { b.onclick = () => openPatterns(b.dataset.pt); });
+$('pt-close').onclick = () => $('pt').classList.add('hidden');
+$('pt').onclick = (e) => { if (e.target === $('pt')) $('pt').classList.add('hidden'); };
+$('open-patterns').onclick = () => openPatterns('weeks');
 
 // ------------------------------------------------------------------ quiet-time nudge
 function renderNudge(child) {
@@ -203,6 +346,10 @@ function renderDay(d) {
   if (ai && !ai.error) {
     const box = [el('p', '', ai.summary)];
     const ul = el('ul'); (ai.highlights || []).forEach((h) => ul.append(el('li', '', h))); box.push(ul);
+    if (ai.action_items && ai.action_items.length) {
+      box.push(el('h3', 'section', '✅ Next steps'));
+      const steps = el('ul', 'steps'); ai.action_items.forEach((s) => steps.append(el('li', '', s))); box.push(steps);
+    }
     if (ai.watch_for) box.push(el('div', 'watch', `👀 ${ai.watch_for}`));
     $('day-ai').replaceChildren(...box);
   } else if (ai && ai.error) {
@@ -360,15 +507,15 @@ function renderAlert(a, child) {
   const waiting = ['listening', 'waiting'].includes(a.state);
   // worrying adult (luring / grooming patterns): the most dramatic state, details shown at once
   const danger = Boolean((a.signals && a.signals.adult_concerning >= 0.6) || (a.concern_quotes && a.concern_quotes.length));
-  const cls = a.state === 'coming' ? 'coming' : a.state === 'checking' ? 'checking' : danger ? 'danger' : urgent ? 'urgent' : 'waiting';
-  $('alert').className = `alert ${cls}${urgent && waiting && now - a.created < 180 ? ' fresh' : ''}`;
-
-  // chip + title + ONE consistent reason line (#1)
-  const chip = { coming: '✓ On the way', checking: '🤸 Checking', danger: '⚠ Possible luring', urgent: '🚨 Urgent', waiting: '⚠ Needs you' }[cls];
-  $('a-chip').textContent = chip;
-  const crying = a.signals && a.signals.crying >= 0.6;
-  $('a-icon').textContent = { coming: '🏃', checking: '🤸', danger: '⚠️' }[cls]
-    || (a.kind === 'distress' ? (crying && !urgent ? '😢' : a.signals && a.signals.adult_anger >= 0.6 ? '😠' : '😱') : urgent ? '🚨' : '🙋');
+  // one colour + icon per kind of event; urgency is a red ring + tag, so the kind stays recognisable
+  const kind = eventKind(a);
+  const [kIcon, kLabel] = kindMeta(a, kind);
+  const coming = a.state === 'coming';
+  $('alert').className = ['alert', `k-${kind}`, kind === 'danger' ? 'danger' : '', (kind !== 'help' || coming) ? 'dark' : '',
+    coming ? 'coming' : '', urgent && !coming ? 'is-urgent' : ''].filter(Boolean).join(' ');
+  $('a-chip').textContent = coming ? '✓ On the way' : `${kIcon} ${kLabel}`;
+  $('a-urgent').classList.toggle('hidden', !(urgent && !coming && kind !== 'danger'));
+  $('a-icon').textContent = coming ? '🏃' : kIcon;
   let title;
   if (a.state === 'coming') title = danger ? `Go to ${child} now: you're on your way` : `You're on your way`;
   else if (a.state === 'checking') title = `Checking on ${child}`;
@@ -470,6 +617,25 @@ function renderLadder(a, show, now) {
   box.replaceChildren(...nodes);
 }
 
+/** The kind of event decides its colour and icon everywhere (alert card, history). */
+function eventKind(e) {
+  const s = e.signals || {};
+  if ((e.concern_quotes && e.concern_quotes.length) || s.adult_concerning >= 0.6) return 'danger';
+  if (e.kind === 'fall' || e.state === 'checking') return 'fall';
+  if (e.kind === 'distress') return (s.adult_anger >= 0.6 || s.screaming >= 0.6) ? 'anger' : 'cry';
+  if (e.trigger === 'voice') return 'voice';
+  if (e.kind === 'alone') return 'alone';
+  return 'help';
+}
+function kindMeta(e, kind) {
+  const s = e.signals || {};
+  return {
+    danger: ['⚠️', 'Possible luring'], fall: ['🤸', 'Possible fall'], voice: ['🗣️', 'Calling you'],
+    cry: ['😢', 'Crying'], anger: s.screaming >= 0.6 && !(s.adult_anger >= 0.6) ? ['😱', 'Screaming'] : ['😠', 'Angry voice'],
+    alone: ['💬', 'Quiet time'], help: ['🙋', 'Needs you'],
+  }[kind];
+}
+
 // ------------------------------------------------------------------ history (#9)
 function historyTitle(e, child) {
   if (e.kind === 'fall') return e.outcome === 'ok' ? `Fall check: ${child} said OK` : 'Possible fall';
@@ -499,9 +665,9 @@ function renderHistory(child) {
     const d = dayLabel(e.created);
     if (d !== lastDay) { nodes.push(el('div', 'day', d)); lastDay = d; }
     const lure = e.concern_quotes && e.concern_quotes.length;
-    const sev = lure ? 3 : e.kind === 'note' ? 1 : e.outcome === 'ok' ? 0 : e.level >= 2 ? 2 : 1;
-    const item = el('div', `item sev${sev}`);
-    item.append(el('div', 'ic', lure ? '⚠️' : historyIcon(e)));
+    const k = e.kind === 'note' ? 'note' : eventKind(e);
+    const item = el('div', `item k-${k}`);
+    item.append(el('div', 'ic', k === 'note' ? '🗣' : kindMeta(e, k)[0]));
     const body = el('div', 'body');
     const top = el('div', 'top');
     top.append(el('span', 'title', historyTitle(e, child)), el('span', 'time', clockTime(e.created)));
@@ -594,8 +760,12 @@ function open() {
       const first = !S;
       S = m; render();
       if (first && PARAMS.get('day')) openDay(PARAMS.get('day'));   // /mom?day=typical opens the day picture
+      if (first && PARAMS.get('patterns')) openPatterns(PARAMS.get('patterns'));   // /mom?patterns=weeks
+      if (first && PARAMS.get('transcript')) openTranscript(PARAMS.get('transcript'));
     }
     else if (m.type === 'day') renderDay(m);
+    else if (m.type === 'trends') renderTrends(m);
+    else if (m.type === 'transcript') onCaption(m);
   };
   ws.onclose = () => {
     if (S) { S.band.connected = false; S.band.state = 'offline'; S.notice = 'Lost connection to Pixie, retrying…'; render(); }

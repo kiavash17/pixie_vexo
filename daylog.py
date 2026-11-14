@@ -62,6 +62,97 @@ class DayLog:
         m["social"] = m["listened"] = True
 
 
+# ==================================================================== full-day transcript
+class TranscriptLog:
+    """Every final sentence the mic heard, with its time, one JSON-lines file per day."""
+
+    def __init__(self, folder: Path):
+        self.folder = folder
+        folder.mkdir(parents=True, exist_ok=True)
+
+    def add(self, text, t=None):
+        t = t or time.time()
+        path = self.folder / ("%s.jsonl" % time.strftime("%Y-%m-%d", time.localtime(t)))
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"t": t, "text": text}) + "\n")
+
+    def lines(self, date=None):
+        path = self.folder / ("%s.jsonl" % (date or time.strftime("%Y-%m-%d")))
+        if not path.exists():
+            return []
+        out = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                pass
+        return out
+
+
+# Example transcripts for the sample days (who is speaking is part of the text, as a reader would hear it)
+SAMPLE_TRANSCRIPT = {
+    "typical": [
+        ("08:05", "Good morning Maya! Hang your backpack up and find your seat."),
+        ("09:12", "Can I borrow the blue crayon? Thank you!"),
+        ("10:31", "Mommy wanted me? No, I just wanted to tell her I finished my reading."),
+        ("12:10", "Can I sit with you at lunch? Sure, Maya, come sit here."),
+        ("14:45", "Maya, please tell your mom the class photo is on Thursday, so wear something nice."),
+        ("15:05", "And remind your dad we need the signed permission slip for the zoo trip by Friday."),
+        ("16:35", "Great running today! Bring your water bottle next time, okay?"),
+        ("16:41", "Can I have an ice cream please? Here you go."),
+        ("19:20", "Goodnight Pixie. Goodnight everyone."),
+    ],
+    "rough": [
+        ("08:02", "I don't want to go to school today."),
+        ("09:39", "Nobody wants to play with me."),
+        ("11:20", "Maya, you forgot your lunch again. Please tell your mom you need a packed lunch tomorrow."),
+        ("12:44", "Mommy! Mommy, where are you?"),
+        ("14:19", "Stop that right now! I said stop!"),
+        ("15:22", "Can I buy the game card? No, that's not allowed."),
+        ("17:05", "Maya, pickup was late again today. Please let your parents know pickup is at 3:15, not 3:45."),
+        ("17:08", "Also ask your mom to call me about the school counsellor, it's nothing to worry about."),
+    ],
+}
+
+
+def sample_transcript(kind):
+    day = time.mktime(time.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d"))
+    out = []
+    for hm, text in SAMPLE_TRANSCRIPT.get(kind, []):
+        h, m = map(int, hm.split(":"))
+        out.append({"t": day + h * 3600 + m * 60, "text": text})
+    return out
+
+
+# ==================================================================== things said for the parent
+ACTIONS_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {"items": {"type": "ARRAY", "items": {
+        "type": "OBJECT",
+        "properties": {"action": {"type": "STRING"}, "who": {"type": "STRING"}, "when": {"type": "STRING"},
+                       "quote": {"type": "STRING"}},
+        "required": ["action", "who", "when", "quote"]}}},
+    "required": ["items"],
+}
+ACTIONS_PROMPT = (
+    "Below is what the microphone on a child's wristband heard (the child is %s). Find only messages "
+    "meant for the child's PARENT: something a teacher, coach, carer or other adult asks the parent to do, "
+    "know or bring, usually said as 'tell your mom...', 'remind your dad...', 'let your parents know...'. "
+    "For each: `action` = a short to-do for the parent, starting with a verb (e.g. 'Pack a lunch for "
+    "tomorrow'); `who` = who said it (teacher, coach, ... or 'someone'); `when` = the deadline or day if "
+    "said, else ''; `quote` = the exact words. Ignore everything else, including what the child says and "
+    "instructions meant only for the child. Return an empty list if there are none.\n"
+    "Already on the parent's list (do not repeat): %s\n\nTranscript:\n%s")
+
+
+def extract_actions(lines, child, existing):
+    import gemini
+    text = "\n".join("[%s] %s" % (time.strftime("%H:%M", time.localtime(l["t"])), l["text"]) for l in lines)
+    r = gemini.analyze(b"", ACTIONS_PROMPT % (child, json.dumps(existing), text), ACTIONS_SCHEMA,
+                       model=gemini.ASSESS_MODEL, timeout=40)
+    return r.get("items", [])
+
+
 # ==================================================================== summary
 def _segments(minutes, key):
     """Merge consecutive minutes with the same value of key(m) into [start, end, value]."""
@@ -191,8 +282,9 @@ DAY_SCHEMA = {
     "type": "OBJECT",
     "properties": {"headline": {"type": "STRING"}, "summary": {"type": "STRING"},
                    "highlights": {"type": "ARRAY", "items": {"type": "STRING"}},
+                   "action_items": {"type": "ARRAY", "items": {"type": "STRING"}},
                    "watch_for": {"type": "STRING"}},
-    "required": ["headline", "summary", "highlights", "watch_for"],
+    "required": ["headline", "summary", "highlights", "action_items", "watch_for"],
 }
 DAY_PROMPT = (
     "You write the end-of-day note in Pixie, a screenless help band for a young child. Using the day's "
@@ -202,12 +294,18 @@ DAY_PROMPT = (
     "(distress alerts, urgent requests, little movement, long stretches alone) must read as a hard day, "
     "said kindly; never dress it up as great. For reference a typical child walks 8,000-12,000 steps. "
     "Long stretches without talking to anyone matter for some children (for example autistic children): "
-    "name them plainly and kindly as time alone, not as 'peaceful', and never alarmingly. Facts: %s")
+    "name them plainly and kindly as time alone, not as 'peaceful', and never alarmingly. "
+    "Like a meeting-notes app, also list `action_items`: concrete next steps for the parent from the "
+    "transcript and to-dos (who asked, and by when if said), each starting with a verb; empty if none. "
+    "Facts: %s")
 
 
-def ai_note(day):
+def ai_note(day, transcript=None, todos=None):
     import gemini
     facts = {"child": day["child"], "stats": day["stats"],
              "alone_stretches": [{"from": "%02d:%02d" % divmod(s, 60), "to": "%02d:%02d" % divmod(e, 60)} for s, e, _ in day["alone"]],
-             "moments": ["%02d:%02d %s" % (*divmod(m["m"], 60), m["text"]) for m in day["markers"]]}
+             "moments": ["%02d:%02d %s" % (*divmod(m["m"], 60), m["text"]) for m in day["markers"]],
+             "transcript": ["%s %s" % (time.strftime("%H:%M", time.localtime(l["t"])), l["text"])
+                            for l in (transcript or [])][-120:],
+             "parent_todos": [t["action"] for t in (todos or [])]}
     return gemini.analyze(b"", DAY_PROMPT % json.dumps(facts), DAY_SCHEMA, model=gemini.ASSESS_MODEL, timeout=40)

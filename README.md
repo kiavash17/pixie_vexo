@@ -22,6 +22,17 @@ over Bluetooth and reads every sensor plus the microphone.
 - **Maya's day:** a per-minute record becomes a daily picture (activity, talking vs. time
   alone, alerts, purchases), stats and a Gemini-written note. `/mom?day=typical` and
   `/mom?day=rough` show generated example days.
+- **Live captions:** Mom sees what's being said live (📝 Captions, next to Listen in).
+- **For Mom & Dad:** things other adults say for the parent ("tell your mom to pack a lunch
+  tomorrow", "pickup is at 3:15") are picked out of the transcript by Gemini into a to-do list.
+- **Full-day transcript:** every sentence the mic heard, saved per day, searchable (📝 Full
+  transcript). Maya's day gets Otter-style **Next steps** from it.
+- **Patterns & baseline:** weekly / monthly numbers (steps, talking, time alone, crying, help) and
+  things Maya said ("my tummy hurts", "nobody plays with me", "I'm scared") compared with her
+  own baseline; Gemini writes non-diagnostic patterns with gentle next steps. Example data for
+  the demo: `/mom?patterns=weeks`.
+- **Event colours:** each kind of event has its own colour and icon (help amber, calling teal,
+  crying indigo, angry voice orange, fall purple, worrying adult black/red); urgency adds a red ring.
 - **Help request:** after the gesture Mom is alerted at once, and the mic opens
   for 8 s (voice note + transcript). A second double-tap makes it urgent.
 - **Acknowledgement on the wrist:** amber = waiting, red = urgent, green = "I'm coming".

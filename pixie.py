@@ -23,12 +23,14 @@ from pathlib import Path
 import gemini
 from wallet import Wallet
 import daylog
+import trends
 
 CHILD = "Maya"
 GUARDIANS = [{"name": "Mom", "role": "primary"}, {"name": "Dad", "role": "secondary"}]
 NOTE_SECONDS = 8          # mic open after a help request
 ACK_TIMEOUT = 30          # seconds without an answer before each escalation step
 FALL_CHECK_SECONDS = 15   # time to answer "are you OK?" with a double-tap
+FALL_GRACE = 2.5          # taps right after a fall are the impact, not an answer
 DEBOUNCE = 1.5            # ignore a second double-tap closer than this
 CONFIRM_WINDOW = 3.0      # "double-tap twice": the second double-tap must come within this many seconds
 LOW_BATTERY = 15
@@ -102,6 +104,11 @@ class Pixie:
         self.gesture = "twice"             # help gesture: "twice" = double-tap, then again within 3 s; "once"
         self.armed_at = 0.0                # time of the first double-tap of a "twice" gesture
         self.stray_taps = 0                # lone double-taps that did not become a request (today)
+        self.transcripts = daylog.TranscriptLog(data_dir / "transcripts")
+        self.todos_file = data_dir / "todos.json"
+        self.todos = json.loads(self.todos_file.read_text()) if self.todos_file.exists() else []
+        self.captions = False              # guardian turned live captions on (mic open, no audio file)
+        self.actions_seen_t = time.time()  # transcript lines after this are checked for parent to-dos
 
     # ================================================================ snapshot for the page
     def snapshot(self):
@@ -125,7 +132,8 @@ class Pixie:
             "notice": self.notice, "fall_check": self.fall_check,
             "wallet": self.wallet.snapshot(),
             "nudge": self.nudge, "quiet_minutes": self.quiet_minutes, "listen_in": self.listen_in,
-            "gesture": self.gesture,
+            "gesture": self.gesture, "captions": self.captions,
+            "todos": [t for t in self.todos if not t.get("deleted")][-40:][::-1],
             "last_social": self.last_social if self.listening else None,
             "listen": dict(self.listen, on=self.listening, gemini=gemini.available(),
                            requests_hour=gemini.requests_last_hour()),
@@ -162,16 +170,34 @@ class Pixie:
         self.last_social = now
         self.daylog.mark_social()
 
+    async def send_trends(self, view):
+        data = trends.build(view, CHILD)
+        cache = self.__dict__.setdefault("trend_cache", {})
+        if view in cache:
+            data["ai"] = cache[view]
+            self.hub.push(data)
+            return
+        self.hub.push(data)
+        try:
+            data["ai"] = cache[view] = await asyncio.get_running_loop().run_in_executor(None, trends.ai_patterns, data)
+        except Exception as e:
+            data["ai"] = {"error": str(e)[:100]}
+        self.hub.push(data)
+
     async def send_day(self, which):
         if which in ("typical", "rough"):
             day = daylog.sample_day(which, CHILD)
+            transcript, todos = daylog.sample_transcript(which), []
         else:
             date = time.strftime("%Y-%m-%d")
             today = lambda t: time.strftime("%Y-%m-%d", time.localtime(t)) == date   # noqa: E731
             events = [e for e in self.history if today(e["created"])]
             buys = [t for t in self.wallet.data["tx"] if today(t["t"])]
             day = daylog.build(self.daylog.minutes, events, buys, "Today so far", time.strftime("%A"), CHILD)
+            transcript = self.transcripts.lines()
+            todos = [t for t in self.todos if today(t["t"]) and not t.get("deleted")]
         day["which"] = which
+        day["transcript_lines"] = len(transcript)
         cache = getattr(self, "day_cache", {})
         self.day_cache = cache
         if which in cache:                                   # sample days: the note never changes
@@ -180,7 +206,7 @@ class Pixie:
             return
         self.hub.push(day)
         try:
-            day["ai"] = await asyncio.get_running_loop().run_in_executor(None, daylog.ai_note, day)
+            day["ai"] = await asyncio.get_running_loop().run_in_executor(None, daylog.ai_note, day, transcript, todos)
             if which != "today":
                 cache[which] = day["ai"]
         except Exception as e:
@@ -218,6 +244,7 @@ class Pixie:
         else:
             self.notice = "%s's band is offline: alerts can't reach you" % CHILD
             self.listen_in = None
+            self.captions = False
             self.log_line("Band went offline")
         self.publish()
 
@@ -225,6 +252,8 @@ class Pixie:
         now = time.time()
         a = self.active
         if a and a["state"] == "checking":                     # answer to "are you OK?": one double-tap
+            if now - a["created"] < FALL_GRACE:              # the landing itself registers as taps: ignore
+                return
             self.timeline("%s double-tapped: I'm OK" % CHILD)
             self.finish(outcome="ok")
             return
@@ -315,7 +344,7 @@ class Pixie:
     async def voice_note(self, eid):
         audio_name = "help-%s.ogg" % eid
         text = ""
-        if self.listening or self.listen_in:                 # mic already on: cut the note from the buffer
+        if self.listening or self.listen_in or self.captions:   # mic already on: cut the note from the buffer
             await asyncio.sleep(NOTE_SECONDS)
             self.hub.save_clip(audio_name, NOTE_SECONDS + 2)
         else:
@@ -343,6 +372,8 @@ class Pixie:
         await self.assess(eid)
 
     def on_text(self, text, final):                          # live transcript during the note
+        if final and (text or "").strip():
+            self.transcripts.add(text.strip())               # the full-day transcript
         if final and self.listening and not self.active and CALL_RE.search(text or ""):
             self.on_voice_call(text, "heard")                # fast path: Deepgram words
             return
@@ -423,6 +454,18 @@ class Pixie:
             await self.wallet.command(cmd)
         elif c == "clear_history":
             self.clear_history()
+        elif c == "captions":
+            await self.set_captions(bool(cmd.get("on")))
+        elif c == "todo_done":
+            for t in self.todos:
+                if t["id"] == cmd.get("id"):
+                    t["done"] = bool(cmd.get("done", True))
+            self.save_todos()
+        elif c == "todo_delete":
+            for t in self.todos:
+                if t["id"] == cmd.get("id"):
+                    t["deleted"] = True
+            self.save_todos()
         elif c == "listen_in":
             await (self.start_listen_in(cmd.get("by", GUARDIANS[0]["name"])) if cmd.get("on") else self.stop_listen_in())
         elif c == "gesture":
@@ -435,6 +478,8 @@ class Pixie:
             self.last_social = time.time()           # start counting again
         elif c == "day":
             self.spawn_bg(self.send_day(cmd.get("which", "today")))
+        elif c == "trends":
+            self.spawn_bg(self.send_trends("months" if cmd.get("view") == "months" else "weeks"))
         elif c == "call" and a:
             self.timeline("%s called %s (simulated call)" % (cmd.get("by", GUARDIANS[0]["name"]),
                                                            cmd.get("who", GUARDIANS[1]["name"])))
@@ -463,6 +508,12 @@ class Pixie:
                 self.on_double_tap(confirmed=True)
             elif cmd.get("what") == "fall":
                 self.on_fall()
+            elif cmd.get("what") == "teacher":           # pretend a teacher left messages for the parent
+                for line in ("Okay Maya, tell your mom you need a packed lunch tomorrow, the cafeteria is closed.",
+                             "And please remind your dad that pickup on Friday is at 3 o'clock sharp."):
+                    self.transcripts.add(line)
+                    self.hub.push({"type": "transcript", "text": line, "final": True})
+                self.spawn_bg(self.check_actions())
             elif cmd.get("what") == "voice":             # pretend the child called out
                 self.on_voice_call("Mommy! Mommy, where are you?", "heard")
             elif cmd.get("what") == "quiet":             # pretend nobody talked for the whole check time
@@ -490,7 +541,7 @@ class Pixie:
         for t in self.tasks:
             t.cancel()
         self.tasks = []
-        if self.hub.status["mic"] and not self.listening and not self.listen_in:
+        if self.hub.status["mic"] and not self.mic_needed():
             asyncio.ensure_future(self.hub.set_mic(False))
         self.recent.clear()                  # a new alert needs fresh evidence, not the windows just handled
         a["state"], a["resolved_at"] = "resolved", time.time()
@@ -529,7 +580,7 @@ class Pixie:
             self.log_line("Listening mode on: Pixie listens for crying, screaming and angry voices (blue light)")
         elif not on and self.listening:
             self.listening = False
-            if not (self.active and self.active["state"] == "listening"):
+            if not self.mic_needed():
                 await self.hub.set_mic(False)
             self.listen.update(last=None, quiet=True)
             self.log_line("Listening mode off")
@@ -552,6 +603,60 @@ class Pixie:
         elif not self.hub.status["mic"]:
             await self.flash_led(name, seconds)
 
+    # ================================================================ who needs the mic
+    def mic_needed(self):
+        return bool(self.listening or self.listen_in or self.captions
+                    or (self.active and self.active.get("state") == "listening"))
+
+    async def set_captions(self, on):
+        if on and not self.captions and self.hub.band:
+            self.captions = True
+            if not self.hub.status["mic"]:
+                await self.hub.set_mic(True, record=False)    # band light turns blue
+            self.log_line("%s turned live captions on" % GUARDIANS[0]["name"])
+        elif not on and self.captions:
+            self.captions = False
+            if self.hub.status["mic"] and not self.mic_needed():
+                await self.hub.set_mic(False)
+                await self.apply_led()
+            self.log_line("%s turned live captions off" % GUARDIANS[0]["name"])
+
+    # ================================================================ things said for the parent -> to-dos
+    def save_todos(self):
+        self.todos_file.write_text(json.dumps(self.todos[-300:], indent=1))
+
+    async def actions_loop(self):
+        while True:
+            await asyncio.sleep(45)
+            try:
+                await self.check_actions()
+            except Exception as e:
+                print("  [todo] %s" % e)
+
+    async def check_actions(self):
+        lines = self.transcripts.lines()
+        new = [l for l in lines if l["t"] > self.actions_seen_t]
+        if not new or not gemini.available():
+            return
+        context = [l for l in lines if l["t"] <= self.actions_seen_t][-4:]
+        self.actions_seen_t = new[-1]["t"]
+        existing = [t["action"] for t in self.todos if not t.get("deleted")][-30:]
+        items = await asyncio.get_running_loop().run_in_executor(
+            None, daylog.extract_actions, context + new, CHILD, existing)
+        known = {t["action"].lower() for t in self.todos}
+        added = 0
+        for it in items:
+            if it.get("action") and it["action"].lower() not in known:
+                self.todos.append({"id": "%d" % (time.time() * 1000 + added), "t": time.time(), "done": False,
+                                   "action": it["action"], "who": it.get("who") or "someone",
+                                   "when": it.get("when", ""), "quote": it.get("quote", "")})
+                known.add(it["action"].lower())
+                added += 1
+                print("  [todo] %s (%s)" % (it["action"], it.get("who")))
+        if added:
+            self.save_todos()
+            self.publish()
+
     # ================================================================ listen in (live sound to the guardian)
     LISTEN_IN_MAX = 120
 
@@ -573,8 +678,7 @@ class Pixie:
         li, self.listen_in = self.listen_in, None
         if not li:
             return
-        mic_needed = self.listening or (self.active and self.active["state"] == "listening")
-        if self.hub.status["mic"] and not mic_needed:
+        if self.hub.status["mic"] and not self.mic_needed():
             await self.hub.set_mic(False)
             await self.apply_led()
         self.log_line("%s listened in live for %s" % (li["by"], duration_s(time.time() - li["t"])))

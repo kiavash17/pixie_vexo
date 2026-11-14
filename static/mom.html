@@ -33,7 +33,7 @@
       <div class="a-head">
         <div class="a-icon" id="a-icon">🙋</div>
         <div>
-          <div class="state-chip" id="a-chip">⚠ Needs you</div>
+          <div class="state-chip" id="a-chip">⚠ Needs you</div><span class="urgent-tag hidden" id="a-urgent">URGENT</span>
           <h1 id="a-title">Maya wants you</h1>
         </div>
       </div>
@@ -107,6 +107,18 @@
     <section class="quick" id="quick">
       <button class="btn soft" id="b-hug">💗 Send Maya a hug</button>
       <button class="btn soft" id="b-listen-in">🎧 Listen in</button>
+      <button class="btn soft" id="b-captions">📝 Captions</button>
+    </section>
+    <section class="captions hidden" id="captions">
+      <div class="cap-head"><span class="rec"></span><b>Live captions</b><button class="btn small" id="cap-stop">Stop</button></div>
+      <div class="cap-lines" id="cap-lines"></div>
+      <div class="cap-interim" id="cap-interim"></div>
+    </section>
+
+    <!-- things other adults said for the parent -->
+    <section class="todos hidden" id="todos">
+      <div class="sec-head"><h2>📋 For Mom &amp; Dad</h2><span class="todo-count" id="todo-count"></span></div>
+      <ul id="todo-list"></ul>
     </section>
     <section class="livebar hidden" id="livebar">
       <span class="rec"></span>
@@ -135,6 +147,10 @@
         <button class="btn soft small" data-day="today">Today</button>
         <button class="btn soft small" data-day="typical">🌤 Typical day</button>
         <button class="btn soft small" data-day="rough">🌧 Rough day</button>
+      </div>
+      <div class="daylinks">
+        <button class="link" id="open-patterns">📈 Patterns &amp; baseline</button>
+        <button class="link" id="open-transcript">📝 Full transcript</button>
       </div>
     </section>
 
@@ -187,6 +203,7 @@
     <button data-sim="double-tap">Double-tap</button>
     <button data-sim="voice">Calls "Mommy!"</button>
     <button data-sim="quiet">Quiet 1 h</button>
+    <button data-sim="teacher">Teacher message</button>
     <button data-sim="fall">Fall</button>
     <button data-sim="crying">Crying</button>
     <button data-sim="adult_anger">Angry adult</button>
@@ -283,6 +300,34 @@
       </div>
     </div>
     <div class="day-ai" id="day-ai"><span class="pulse"></span> Writing the day's note…</div>
+    <button class="link" id="day-transcript">📝 Read the full transcript</button>
+  </div>
+</div>
+
+<!-- full-day transcript (backseat) -->
+<div class="overlay hidden" id="tr">
+  <div class="panel day-panel">
+    <div class="panel-head"><h2 id="tr-title">Transcript</h2><button class="icon" id="tr-close" aria-label="Close">✕</button></div>
+    <div class="daytabs" id="tr-tabs">
+      <button data-tr="today">Today</button><button data-tr="typical">🌤 Typical</button><button data-tr="rough">🌧 Rough</button>
+    </div>
+    <input class="search" id="tr-search" placeholder="Search the day… (e.g. lunch, tummy, mom)">
+    <p class="tr-note">Everything the band's microphone heard while it was on. It includes other people's words, so keep it private.</p>
+    <div id="tr-lines"></div>
+  </div>
+</div>
+
+<!-- patterns over weeks / months vs the child's own baseline -->
+<div class="overlay hidden" id="pt">
+  <div class="panel day-panel">
+    <div class="panel-head"><h2 id="pt-title">Patterns</h2><button class="icon" id="pt-close" aria-label="Close">✕</button></div>
+    <div class="daytabs two" id="pt-tabs"><button data-pt="weeks" class="on">Weeks</button><button data-pt="months">Months</button></div>
+    <p class="tr-note" id="pt-sub"></p>
+    <div id="pt-ai" class="pt-ai"><span class="pulse"></span> Looking for patterns…</div>
+    <h3 class="section">Compared with Maya's baseline</h3>
+    <div id="pt-metrics" class="pt-metrics"></div>
+    <h3 class="section">Things Maya said, by week</h3>
+    <div id="pt-mentions" class="pt-mentions"></div>
   </div>
 </div>
 
