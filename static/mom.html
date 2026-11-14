@@ -94,7 +94,7 @@
     <section id="calm" class="hero">
       <div class="ring" id="ring"><div class="face" id="hero-avatar">M</div><div class="okbadge">✓</div></div>
       <h1 id="hero-title">Maya is OK</h1>
-      <p id="calm-sub">Double-tap the band = "I need you"</p>
+      <p id="calm-sub">Double-tap twice = "I need you"</p>
       <div class="tiles">
         <div class="tile"><div class="gauge" id="t-bat"><span id="t-bat-v">–</span></div><label>Battery</label></div>
         <div class="tile"><div class="bars" id="t-sig"><i></i><i></i><i></i><i></i></div><label id="t-sig-l">Distance</label></div>
@@ -106,6 +106,36 @@
 
     <section class="quick" id="quick">
       <button class="btn soft" id="b-hug">💗 Send Maya a hug</button>
+      <button class="btn soft" id="b-listen-in">🎧 Listen in</button>
+    </section>
+    <section class="livebar hidden" id="livebar">
+      <span class="rec"></span>
+      <div class="live-txt"><b id="live-title">Listening live</b><small id="live-sub">The band light is blue while you listen</small></div>
+      <div class="vu"><i id="vu"></i></div>
+      <button class="btn small" id="live-stop">Stop</button>
+    </section>
+
+    <!-- quiet-time nudge (gentle, not an alarm) -->
+    <section class="nudge hidden" id="nudge">
+      <div class="nudge-ic">💬</div>
+      <div class="nudge-body">
+        <b id="nudge-title">Maya hasn't talked with anyone for 1 h</b>
+        <p id="nudge-sub">It's been quiet since 1:52 PM. Some kids need a gentle check-in.</p>
+        <div class="nudge-actions">
+          <button class="btn primary small" id="nudge-hug">💗 Send a hug</button>
+          <button class="btn soft small" id="nudge-ok">Dismiss</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- daily picture -->
+    <section class="daycard">
+      <div class="daycard-top"><div class="daycard-ic">📊</div><div><b><span class="w-child">Maya</span>'s day</b><p>A picture of the day, every evening at 8 pm</p></div></div>
+      <div class="daybtns">
+        <button class="btn soft small" data-day="today">Today</button>
+        <button class="btn soft small" data-day="typical">🌤 Typical day</button>
+        <button class="btn soft small" data-day="rough">🌧 Rough day</button>
+      </div>
     </section>
 
     <!-- Pixie Card (demo tap-to-pay) -->
@@ -155,6 +185,8 @@
   <section class="demo hidden" id="demo">
     <span>Demo</span>
     <button data-sim="double-tap">Double-tap</button>
+    <button data-sim="voice">Calls "Mommy!"</button>
+    <button data-sim="quiet">Quiet 1 h</button>
     <button data-sim="fall">Fall</button>
     <button data-sim="crying">Crying</button>
     <button data-sim="adult_anger">Angry adult</button>
@@ -171,6 +203,18 @@
       <div><b>Listening mode</b><small>Pixie listens for crying, screaming and worrying adult behaviour. The band's light stays blue so people nearby can see it. Short clips are kept only when something is detected.</small></div>
       <span class="switch"><input type="checkbox" id="s-listen"><i></i></span>
     </label>
+    <div class="row static">
+      <div><b>Help gesture</b><small>How Maya asks for you. Two double-taps in a row avoids bumps triggering it.</small></div>
+      <select id="s-gesture" class="sel">
+        <option value="twice">Double-tap twice</option><option value="once">Double-tap once</option>
+      </select>
+    </div>
+    <div class="row static">
+      <div><b>Quiet-time check</b><small>Tell me if Maya hasn't talked with anyone for a while (needs Listening mode)</small></div>
+      <select id="s-quiet" class="sel">
+        <option value="0">Off</option><option value="30">30 min</option><option value="60">1 hour</option><option value="120">2 hours</option>
+      </select>
+    </div>
     <label class="row">
       <div><b>Fall check</b><small>After a fall the band asks Maya if everything is OK. No answer in 15 s alerts you.</small></div>
       <span class="switch"><input type="checkbox" id="s-fall"><i></i></span>
@@ -216,6 +260,29 @@
       <summary id="device-log-sum">Device &amp; app events</summary>
       <ul id="device-events"></ul>
     </details>
+  </div>
+</div>
+
+<!-- the day as a picture -->
+<div class="overlay hidden" id="day">
+  <div class="panel day-panel">
+    <div class="panel-head"><h2 id="day-title">Maya's day</h2><button class="icon" id="day-close" aria-label="Close">✕</button></div>
+    <div class="daytabs" id="day-tabs">
+      <button data-day="today">Today</button><button data-day="typical">🌤 Typical</button><button data-day="rough">🌧 Rough</button>
+    </div>
+    <div class="day-headline" id="day-headline"></div>
+    <div class="daystats" id="day-stats"></div>
+    <div class="strip">
+      <div class="strip-row"><span class="strip-l">🏃</span><div class="strip-track" id="strip-move"></div></div>
+      <div class="strip-row"><span class="strip-l">💬</span><div class="strip-track" id="strip-talk"></div></div>
+      <div class="strip-row marks"><span class="strip-l">📍</span><div class="strip-track" id="strip-marks"></div></div>
+      <div class="strip-axis" id="strip-axis"></div>
+      <div class="legend">
+        <span><i class="lg still"></i>still</span><span><i class="lg walk"></i>walking</span><span><i class="lg run"></i>running</span>
+        <span><i class="lg talk"></i>talking</span><span><i class="lg alone"></i>alone 1 h+</span>
+      </div>
+    </div>
+    <div class="day-ai" id="day-ai"><span class="pulse"></span> Writing the day's note…</div>
   </div>
 </div>
 

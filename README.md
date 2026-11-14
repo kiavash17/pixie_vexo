@@ -12,7 +12,17 @@ over Bluetooth and reads every sensor plus the microphone.
 
 `python server.py`, then open `http://localhost:8765/mom` (the parent's phone view).
 
-- **Help request:** the child double-taps the band, Mom is alerted at once, and the mic opens
+- **Help gesture:** double-tap, then double-tap again within 3 s (a lone double-tap from a bump is
+  ignored and logged). "Double-tap once" is a setting. In Listening mode, Maya calling out
+  ("Mommy!", "Dad, where are you?", "Help!") also raises a request (live transcript + Gemini).
+- **Listen in:** Mom can hear Maya's surroundings live for up to 2 min (band light turns blue,
+  nothing is recorded, the session is logged).
+- **Quiet-time check:** with Listening mode on, a gentle nudge when Maya hasn't talked with
+  anyone for 1 h (30 min / 2 h / off), e.g. for autistic children.
+- **Maya's day:** a per-minute record becomes a daily picture (activity, talking vs. time
+  alone, alerts, purchases), stats and a Gemini-written note. `/mom?day=typical` and
+  `/mom?day=rough` show generated example days.
+- **Help request:** after the gesture Mom is alerted at once, and the mic opens
   for 8 s (voice note + transcript). A second double-tap makes it urgent.
 - **Acknowledgement on the wrist:** amber = waiting, red = urgent, green = "I'm coming".
 - **Escalation:** no answer in 30 s → louder + second guardian; then a (simulated) call.

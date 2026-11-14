@@ -106,6 +106,7 @@ LISTEN_SCHEMA = {
         "screaming": {"type": "NUMBER"},
         "adult_anger": {"type": "NUMBER"},
         "child_distress": {"type": "NUMBER"},
+        "child_calling": {"type": "NUMBER"},
         "adult_concerning": {"type": "NUMBER"},
         "concern": {"type": "STRING"},
         "concern_quote": {"type": "STRING"},
@@ -114,7 +115,7 @@ LISTEN_SCHEMA = {
         "transcript": {"type": "STRING"},
         "evidence": {"type": "STRING"},
     },
-    "required": ["crying", "screaming", "adult_anger", "child_distress", "adult_concerning", "concern",
+    "required": ["crying", "screaming", "adult_anger", "child_distress", "child_calling", "adult_concerning", "concern",
                  "concern_quote", "children", "adults", "transcript", "evidence"],
 }
 LISTEN_PROMPT = (
@@ -123,6 +124,9 @@ LISTEN_PROMPT = (
     "or shrieking in fear or pain (NOT happy play screams or cheering), an adult speaking angrily, harshly or "
     "aggressively (a hostile, raised or threatening tone; a soft or coaxing voice is NOT anger), and overall "
     "distress of the child.\n"
+    "Score child_calling: how clearly the CHILD (not an adult) calls out for a parent or caregiver or asks "
+    "for help, e.g. 'Mommy!', 'Dad, where are you?', 'Help!', 'Come here, Mom'. Talking ABOUT mom in a "
+    "normal sentence is not calling.\n"
     "Also score adult_concerning: how strongly an adult's words or manner toward the child match known "
     "luring or grooming patterns: asking the child to keep a secret from parents, offering gifts, sweets, "
     "pets or games to get the child to go somewhere, asking the child to come with them or get in a car, "

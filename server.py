@@ -38,7 +38,8 @@ BAND = 6                                           # our band: Vexo-HACK-06
 PORT = 8765
 REC_DIR = ROOT / "recordings"
 SENSORS = dict(motion=50, events=True, activity=0.5, battery=10, temperature=2, link=True)   # steps 2x/s
-PIXIE_COMMANDS = {"ack", "resolve", "label", "hug", "find", "simulate", "fall_check", "listen", "call", "wallet", "clear_history"}
+PIXIE_COMMANDS = {"ack", "resolve", "label", "hug", "find", "simulate", "fall_check", "listen", "call", "wallet", "clear_history",
+                  "quiet_check", "nudge_dismiss", "day", "listen_in", "gesture"}
 DATA_EVENTS = ["motion", "event", "activity", "battery", "temperature", "link", "mic-level"]
 
 
@@ -160,6 +161,7 @@ class Hub:
             await asyncio.sleep(1.0)
             n_motion, n_audio = self.counts["motion"], self.counts["audio"]
             self.counts = {"motion": 0, "audio": 0}
+            self.pixie.tick()                      # day record + quiet-time check
             self.pixie.publish()                   # mom view: status, last seen, timers
             if self.status["state"] != "connected":
                 continue

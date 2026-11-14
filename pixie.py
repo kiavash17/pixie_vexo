@@ -16,11 +16,13 @@ guardian's outcome label (accidental / wanted me / urgent) for later learning.
 import asyncio
 import collections
 import json
+import re
 import time
 from pathlib import Path
 
 import gemini
 from wallet import Wallet
+import daylog
 
 CHILD = "Maya"
 GUARDIANS = [{"name": "Mom", "role": "primary"}, {"name": "Dad", "role": "secondary"}]
@@ -28,6 +30,7 @@ NOTE_SECONDS = 8          # mic open after a help request
 ACK_TIMEOUT = 30          # seconds without an answer before each escalation step
 FALL_CHECK_SECONDS = 15   # time to answer "are you OK?" with a double-tap
 DEBOUNCE = 1.5            # ignore a second double-tap closer than this
+CONFIRM_WINDOW = 3.0      # "double-tap twice": the second double-tap must come within this many seconds
 LOW_BATTERY = 15
 
 LED = {                                   # (colour, pattern, period ms); mic-on = solid blue (band rule)
@@ -50,6 +53,12 @@ WINDOW = 5
 GATE_DB = 42              # send a window only if its loudest rms_db is <= this (lower = louder; quiet room ~50)
 THRESH = {"screaming": 0.6, "adult_anger": 0.6, "crying": 0.6, "adult_concerning": 0.6}
 CONTEXT_SECONDS = 120     # recent transcript sent with every window (luring builds over time)
+CALLING = 0.6             # Gemini child_calling score that counts as calling for a parent
+# fast path on the live (Deepgram) transcript: clear calls for a parent or for help
+CALL_RE = re.compile(r"^\W*(mom+(y|mie)?|mommy|mama|mum+(y)?|dad+(y|dy)?|papa|help)\b\s*[!?.,]|"
+                     r"\b(help me|where are you,? (mom|mommy|dad|daddy)|(mom|mommy|dad|daddy),? where are you|"
+                     r"come here,? (mom|mommy|dad|daddy)|i need you,? (mom|mommy|dad|daddy)|i'm lost|i am lost)\b",
+                     re.I)
 CONCERN_CLIP = 60         # whole RAM buffer kept when an adult's behaviour is concerning
 STRONG = 0.85             # one window this sure is enough; otherwise 2 of the last 3 windows
 ANGER_NOTE = 0.4          # any sign of adult anger is logged with its clip, even below the alert level
@@ -85,6 +94,14 @@ class Pixie:
         self.last_anger_note = 0.0
         self.child, self.guardian = CHILD, GUARDIANS[0]["name"]
         self.wallet = Wallet(self, data_dir / "wallet.json")
+        self.daylog = daylog.DayLog(data_dir / "days")
+        self.quiet_minutes = 60            # nudge after this long without talking to anyone (0 = off)
+        self.last_social = time.time()
+        self.nudge = None                  # {"since": t, "t": t} while the quiet-time nudge is showing
+        self.listen_in = None              # {"by": name, "t": start} while a guardian listens live
+        self.gesture = "twice"             # help gesture: "twice" = double-tap, then again within 3 s; "once"
+        self.armed_at = 0.0                # time of the first double-tap of a "twice" gesture
+        self.stray_taps = 0                # lone double-taps that did not become a request (today)
 
     # ================================================================ snapshot for the page
     def snapshot(self):
@@ -107,6 +124,9 @@ class Pixie:
             },
             "notice": self.notice, "fall_check": self.fall_check,
             "wallet": self.wallet.snapshot(),
+            "nudge": self.nudge, "quiet_minutes": self.quiet_minutes, "listen_in": self.listen_in,
+            "gesture": self.gesture,
+            "last_social": self.last_social if self.listening else None,
             "listen": dict(self.listen, on=self.listening, gemini=gemini.available(),
                            requests_hour=gemini.requests_last_hour()),
             "active": self.active, "history": self.history[-30:][::-1],
@@ -114,6 +134,58 @@ class Pixie:
 
     def publish(self):
         self.hub.push(self.snapshot())
+
+    # ================================================================ every second
+    def tick(self):
+        """Record the day (per minute) and check quiet time."""
+        if self.hub.status["state"] == "connected":
+            act = self.hub.latest.get("activity") or {}
+            self.daylog.tick(self.hub.live_activity(), act.get("steps"), self.listening)
+        if (self.listening and self.quiet_minutes and not self.nudge
+                and time.time() - self.last_social >= self.quiet_minutes * 60):
+            self.start_nudge()
+
+    def start_nudge(self):
+        self.nudge = {"since": self.last_social, "t": time.time()}
+        mins = int((time.time() - self.last_social) / 60)
+        self.log_line("%s hasn't talked with anyone for %s" % (CHILD, duration(mins)),
+                      extra={"kind": "alone", "since": self.last_social})
+        self.publish()
+
+    def on_social(self):
+        """Gemini heard the child talking WITH someone."""
+        now = time.time()
+        if self.nudge:
+            mins = int((now - self.nudge["since"]) / 60)
+            self.log_line("%s is talking with someone again after %s quiet" % (CHILD, duration(mins)))
+            self.nudge = None
+        self.last_social = now
+        self.daylog.mark_social()
+
+    async def send_day(self, which):
+        if which in ("typical", "rough"):
+            day = daylog.sample_day(which, CHILD)
+        else:
+            date = time.strftime("%Y-%m-%d")
+            today = lambda t: time.strftime("%Y-%m-%d", time.localtime(t)) == date   # noqa: E731
+            events = [e for e in self.history if today(e["created"])]
+            buys = [t for t in self.wallet.data["tx"] if today(t["t"])]
+            day = daylog.build(self.daylog.minutes, events, buys, "Today so far", time.strftime("%A"), CHILD)
+        day["which"] = which
+        cache = getattr(self, "day_cache", {})
+        self.day_cache = cache
+        if which in cache:                                   # sample days: the note never changes
+            day["ai"] = cache[which]
+            self.hub.push(day)
+            return
+        self.hub.push(day)
+        try:
+            day["ai"] = await asyncio.get_running_loop().run_in_executor(None, daylog.ai_note, day)
+            if which != "today":
+                cache[which] = day["ai"]
+        except Exception as e:
+            day["ai"] = {"error": str(e)[:100]}
+        self.hub.push(day)
 
     # ================================================================ inputs from the band
     def on_data(self, name, m):
@@ -145,19 +217,27 @@ class Pixie:
                 asyncio.ensure_future(self.hub.set_mic(True, record=False))
         else:
             self.notice = "%s's band is offline: alerts can't reach you" % CHILD
+            self.listen_in = None
             self.log_line("Band went offline")
         self.publish()
 
-    def on_double_tap(self):
+    def on_double_tap(self, confirmed=False):
         now = time.time()
-        if now - self.last_tap < DEBOUNCE:
-            return
-        self.last_tap = now
         a = self.active
-        if a and a["state"] == "checking":                     # answer to "are you OK?"
+        if a and a["state"] == "checking":                     # answer to "are you OK?": one double-tap
             self.timeline("%s double-tapped: I'm OK" % CHILD)
             self.finish(outcome="ok")
             return
+        if self.gesture == "twice" and not confirmed:
+            if self.armed_at and 0.3 < now - self.armed_at <= CONFIRM_WINDOW:
+                self.armed_at = 0.0                            # second double-tap: it's a real request
+            else:
+                self.armed_at = now                            # first one: wait for the second
+                self.spawn_bg(self.disarm_later(now))
+                return
+        if now - self.last_tap < DEBOUNCE:
+            return
+        self.last_tap = now
         if a and a["state"] in ("listening", "waiting", "coming"):
             if a["level"] < 2:
                 self.raise_level(2, "%s double-tapped again" % CHILD)
@@ -166,6 +246,32 @@ class Pixie:
             self.publish()
             return
         self.start_help("double-tap", "%s double-tapped the band" % CHILD, level=1)
+
+    async def disarm_later(self, armed):
+        await asyncio.sleep(CONFIRM_WINDOW + 0.2)
+        if self.armed_at == armed:                             # no second double-tap: probably a bump
+            self.armed_at = 0.0
+            self.stray_taps += 1
+            self.log_line("A single double-tap was ignored (help needs two in a row)")
+            self.publish()
+
+    def on_voice_call(self, words, how):
+        """The child called for a parent / for help out loud (listening mode)."""
+        words = (words or "").strip()
+        a = self.active
+        if a:
+            if a["state"] in ("listening", "waiting") and words:
+                self.timeline('%s is calling: "%s"' % (CHILD, words))
+                self.publish()
+            return
+        if time.time() - self.last_tap < DEBOUNCE:
+            return
+        self.last_tap = time.time()
+        self.start_help("voice", "%s is calling for you" % CHILD, level=1)
+        self.active["trigger"] = "voice"
+        self.active["call_words"] = words
+        self.timeline('%s %s: "%s"' % ("Pixie", how, words) if words else "Pixie heard %s calling" % CHILD)
+        self.publish()
 
     def on_fall(self):
         if self.active:
@@ -209,7 +315,7 @@ class Pixie:
     async def voice_note(self, eid):
         audio_name = "help-%s.ogg" % eid
         text = ""
-        if self.listening:                                   # mic already on: cut the note from the buffer
+        if self.listening or self.listen_in:                 # mic already on: cut the note from the buffer
             await asyncio.sleep(NOTE_SECONDS)
             self.hub.save_clip(audio_name, NOTE_SECONDS + 2)
         else:
@@ -237,6 +343,9 @@ class Pixie:
         await self.assess(eid)
 
     def on_text(self, text, final):                          # live transcript during the note
+        if final and self.listening and not self.active and CALL_RE.search(text or ""):
+            self.on_voice_call(text, "heard")                # fast path: Deepgram words
+            return
         a = self.active
         if a and a["state"] in ("listening", "coming", "waiting") and self.hub.status["mic"]:
             if final:
@@ -314,6 +423,18 @@ class Pixie:
             await self.wallet.command(cmd)
         elif c == "clear_history":
             self.clear_history()
+        elif c == "listen_in":
+            await (self.start_listen_in(cmd.get("by", GUARDIANS[0]["name"])) if cmd.get("on") else self.stop_listen_in())
+        elif c == "gesture":
+            self.gesture = "once" if cmd.get("value") == "once" else "twice"
+            self.armed_at = 0.0
+        elif c == "quiet_check":
+            self.quiet_minutes = max(0, min(240, int(cmd.get("minutes", 60))))
+        elif c == "nudge_dismiss":
+            self.nudge = None
+            self.last_social = time.time()           # start counting again
+        elif c == "day":
+            self.spawn_bg(self.send_day(cmd.get("which", "today")))
         elif c == "call" and a:
             self.timeline("%s called %s (simulated call)" % (cmd.get("by", GUARDIANS[0]["name"]),
                                                            cmd.get("who", GUARDIANS[1]["name"])))
@@ -337,11 +458,16 @@ class Pixie:
             elif not self.hub.status["mic"]:
                 await self.identify(5)
         elif c == "simulate":
-            if cmd.get("what") == "double-tap":
+            if cmd.get("what") == "double-tap":              # the full gesture
                 self.last_tap = 0
-                self.on_double_tap()
+                self.on_double_tap(confirmed=True)
             elif cmd.get("what") == "fall":
                 self.on_fall()
+            elif cmd.get("what") == "voice":             # pretend the child called out
+                self.on_voice_call("Mommy! Mommy, where are you?", "heard")
+            elif cmd.get("what") == "quiet":             # pretend nobody talked for the whole check time
+                self.last_social = time.time() - (self.quiet_minutes or 60) * 60 - 5 * 60
+                self.start_nudge()
             elif cmd.get("what") in ("crying", "screaming", "adult_anger", "adult_concerning"):
                 k = cmd["what"]
                 luring = k == "adult_concerning"
@@ -364,7 +490,7 @@ class Pixie:
         for t in self.tasks:
             t.cancel()
         self.tasks = []
-        if self.hub.status["mic"] and not self.listening:
+        if self.hub.status["mic"] and not self.listening and not self.listen_in:
             asyncio.ensure_future(self.hub.set_mic(False))
         self.recent.clear()                  # a new alert needs fresh evidence, not the windows just handled
         a["state"], a["resolved_at"] = "resolved", time.time()
@@ -398,6 +524,7 @@ class Pixie:
                 return
             self.listening = True
             self.recent.clear()
+            self.last_social = time.time()           # quiet time counts from when listening starts
             await self.hub.set_mic(True, record=False)
             self.log_line("Listening mode on: Pixie listens for crying, screaming and angry voices (blue light)")
         elif not on and self.listening:
@@ -424,6 +551,34 @@ class Pixie:
             await self.pause_for_light(lambda: self.flash_led(name, seconds))
         elif not self.hub.status["mic"]:
             await self.flash_led(name, seconds)
+
+    # ================================================================ listen in (live sound to the guardian)
+    LISTEN_IN_MAX = 120
+
+    async def start_listen_in(self, by):
+        if self.listen_in or not self.hub.band:
+            return
+        self.listen_in = {"by": by, "t": time.time()}
+        if not self.hub.status["mic"]:
+            await self.hub.set_mic(True, record=False)        # band light turns solid blue: visible to the child
+        self.spawn_bg(self._listen_in_timeout(self.listen_in["t"]))
+        self.publish()
+
+    async def _listen_in_timeout(self, started):
+        await asyncio.sleep(self.LISTEN_IN_MAX)
+        if self.listen_in and self.listen_in["t"] == started:
+            await self.stop_listen_in()
+
+    async def stop_listen_in(self):
+        li, self.listen_in = self.listen_in, None
+        if not li:
+            return
+        mic_needed = self.listening or (self.active and self.active["state"] == "listening")
+        if self.hub.status["mic"] and not mic_needed:
+            await self.hub.set_mic(False)
+            await self.apply_led()
+        self.log_line("%s listened in live for %s" % (li["by"], duration_s(time.time() - li["t"])))
+        self.publish()
 
     async def pause_for_light(self, show):
         """Mic off, run `show()` (a light effect), then listen again."""
@@ -482,6 +637,9 @@ class Pixie:
         self.recent.append(r)
         if r.get("transcript"):
             self.convo.append((now, r["transcript"]))
+            # the wearer talking WITH someone: the wearer + another child or an adult, with words
+            if r.get("children", 0) >= 1 and (r.get("adults", 0) >= 1 or r.get("children", 0) >= 2):
+                self.on_social()
         quote = (r.get("concern_quote") or "").strip()
         if quote and r["adult_concerning"] >= 0.4 and quote not in [q for _, q in self.concern_quotes]:
             self.concern_quotes.append((now, quote))
@@ -499,6 +657,8 @@ class Pixie:
             hits = [x for x in self.recent if x[key] >= THRESH[key] and now - x["t"] <= WINDOW * 3.5]
             return len(hits) >= 2 or r[key] >= STRONG
 
+        if r.get("child_calling", 0) >= CALLING:            # Gemini: the child is calling for a parent
+            self.on_voice_call(r.get("transcript", ""), "heard %s call" % CHILD)
         found = [k for k in DETECTIONS if sustained(k)]
         if r["adult_anger"] >= ANGER_NOTE and "adult_anger" not in found and now - self.last_anger_note > 30:
             self.last_anger_note = now                       # any adult anger is recorded, even below alert level
@@ -573,6 +733,10 @@ class Pixie:
     def spawn(self, coro):
         self.tasks.append(asyncio.ensure_future(coro))
 
+    def spawn_bg(self, coro):
+        """A task that is not tied to the open alert (not cancelled when it is resolved)."""
+        asyncio.ensure_future(coro)
+
     def save(self):
         self.file.write_text(json.dumps(self.history[-500:], indent=1))
 
@@ -617,6 +781,16 @@ class Pixie:
         except Exception as e:
             print("  [pixie] LED: %s" % e)
         await self.apply_led()
+
+
+def duration_s(secs):
+    secs = int(secs)
+    return "%d s" % secs if secs < 60 else "%d min %d s" % divmod(secs, 60)
+
+
+def duration(mins):
+    h, m = divmod(int(mins), 60)
+    return ("%d h %d min" % (h, m) if m else "%d h" % h) if h else "%d min" % m
 
 
 def signal_label(rssi):

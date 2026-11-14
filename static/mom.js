@@ -95,14 +95,119 @@ function render() {
   // alert vs calm
   $('alert').classList.toggle('hidden', !a);
   $('calm').classList.toggle('hidden', !!a);
-  $('quick').classList.toggle('hidden', !!a);
   if (a) renderAlert(a, child); else { lastAlertId = null; $('a-sheet').classList.add('hidden'); }
   renderCalm(child);
   $('b-hug').disabled = $('b-find').disabled = !b.connected;
   $('b-hug').textContent = `💗 Send ${child} a hug`;
   renderHistory(child);
   renderWallet(S.wallet, child);
+  renderNudge(child);
+  renderListenIn(child);
   renderSettings();
+}
+
+// ------------------------------------------------------------------ listen in (live sound)
+let liveCtx = null, liveNext = 0;
+function playPcm(buf) {                          // 20 ms of PCM16 mono @16 kHz from the server
+  if (!S || !S.listen_in || !liveCtx) return;
+  const pcm = new Int16Array(buf);
+  const ab = liveCtx.createBuffer(1, pcm.length, 16000);
+  const ch = ab.getChannelData(0);
+  let peak = 0;
+  for (let i = 0; i < pcm.length; i++) { ch[i] = pcm[i] / 32768; peak = Math.max(peak, Math.abs(ch[i])); }
+  const src = liveCtx.createBufferSource(); src.buffer = ab; src.connect(liveCtx.destination);
+  const now = liveCtx.currentTime;
+  if (liveNext < now + 0.05 || liveNext > now + 0.6) liveNext = now + 0.15;   // small jitter buffer
+  src.start(liveNext); liveNext += ab.duration;
+  $('vu').style.width = `${Math.min(100, peak * 160)}%`;
+}
+function renderListenIn(child) {
+  const li = S.listen_in;
+  $('livebar').classList.toggle('hidden', !li);
+  $('b-listen-in').disabled = !S.band.connected;
+  $('b-listen-in').textContent = li ? '🎧 Listening…' : '🎧 Listen in';
+  if (li) {
+    const s = Math.round(Date.now() / 1000 - li.t);
+    $('live-title').textContent = `Listening live · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    $('live-sub').textContent = `${child}'s band light is blue so ${child} can see it · stops after 2 min`;
+  }
+}
+$('b-listen-in').onclick = () => {
+  liveCtx = liveCtx || new AudioContext({ sampleRate: 16000 });   // the tap itself unlocks audio
+  liveCtx.resume();
+  send({ cmd: 'listen_in', on: !(S && S.listen_in), by: 'Mom' });
+};
+$('live-stop').onclick = () => send({ cmd: 'listen_in', on: false });
+
+// ------------------------------------------------------------------ quiet-time nudge
+function renderNudge(child) {
+  const n = S.nudge;
+  $('nudge').classList.toggle('hidden', !n);
+  if (!n) return;
+  const mins = Math.round((Date.now() / 1000 - n.since) / 60);
+  const h = Math.floor(mins / 60), m = mins % 60;
+  $('nudge-title').textContent = `${child} hasn't talked with anyone for ${h ? `${h} h${m ? ` ${m} min` : ''}` : `${m} min`}`;
+  $('nudge-sub').textContent = `It's been quiet since ${clockTime(n.since)}. Some kids need a gentle check-in.`;
+}
+$('nudge-hug').onclick = () => { send({ cmd: 'hug' }); send({ cmd: 'nudge_dismiss' }); };
+$('nudge-ok').onclick = () => send({ cmd: 'nudge_dismiss' });
+$('s-quiet').onchange = (e) => send({ cmd: 'quiet_check', minutes: Number(e.target.value) });
+$('s-gesture').onchange = (e) => send({ cmd: 'gesture', value: e.target.value });
+
+// ------------------------------------------------------------------ the day as a picture
+let dayWhich = null;
+function openDay(which) {
+  dayWhich = which;
+  $('day').classList.remove('hidden');
+  $('day-ai').replaceChildren(el('span', 'pulse'), document.createTextNode(' Writing the day\'s note…'));
+  document.querySelectorAll('#day-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.day === which));
+  send({ cmd: 'day', which });
+}
+document.querySelectorAll('[data-day]').forEach((b) => { b.onclick = () => openDay(b.dataset.day); });
+$('day-close').onclick = () => { $('day').classList.add('hidden'); dayWhich = null; };
+$('day').onclick = (e) => { if (e.target === $('day')) $('day-close').onclick(); };
+const hm = (mins) => { const h = Math.floor(mins / 60), m = mins % 60; return h ? `${h}h${m ? ` ${m}m` : ''}` : `${m}m`; };
+function renderDay(d) {
+  if (d.which !== dayWhich) return;
+  const [r0, r1] = d.range, span = r1 - r0;
+  const pos = (m) => `${Math.max(0, Math.min(100, ((m - r0) / span) * 100))}%`;
+  const width = (s, e) => `${Math.max(0.3, ((Math.min(e, r1) - Math.max(s, r0)) / span) * 100)}%`;
+  $('day-title').textContent = `${d.child}'s day · ${d.label}`;
+  const st = d.stats;
+  const tiles = [
+    ['👣', st.steps.toLocaleString(), 'steps', st.steps >= 6000 ? 'good' : ''],
+    ['🏃', hm(st.active_min), 'active', ''],
+    ['💬', hm(st.talk_min), 'talking', ''],
+    ['🫥', st.longest_alone ? hm(st.longest_alone) : '–', 'longest alone', st.longest_alone >= 60 ? 'warn' : ''],
+    ['🙋', String(st.help + st.distress), st.avg_answer != null ? `alerts · ${st.avg_answer}s reply` : 'alerts', st.distress ? 'warn' : ''],
+    ['💳', `$${st.spent.toFixed(2)}`, `${st.purchases} bought`, ''],
+  ];
+  $('day-stats').replaceChildren(...tiles.map(([i, v, l, c]) => {
+    const t = el('div', `dstat ${c}`); t.append(el('span', 'i', i), el('b', '', v), el('small', '', l)); return t;
+  }));
+  const segs = (list, cls) => list.filter(([s, e]) => e > r0 && s < r1).map(([s, e, v]) => {
+    const n = el('div', `seg ${cls || v}`); n.style.left = pos(s); n.style.width = width(s, e); return n;
+  });
+  $('strip-move').replaceChildren(...segs(d.activity));
+  $('strip-talk').replaceChildren(...segs(d.social), ...segs(d.alone, 'alone'));
+  $('strip-marks').replaceChildren(...d.markers.filter((m) => m.m >= r0 && m.m <= r1).map((m) => {
+    const n = el('div', 'mark', m.icon); n.style.left = pos(m.m); n.title = `${String(Math.floor(m.m / 60)).padStart(2, '0')}:${String(m.m % 60).padStart(2, '0')} ${m.text}`; return n;
+  }));
+  const axis = [];
+  for (let h = r0 / 60; h <= r1 / 60; h += 2) {
+    const s = el('span', '', `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`); s.style.left = pos(h * 60); axis.push(s);
+  }
+  $('strip-axis').replaceChildren(...axis);
+  const ai = d.ai;
+  $('day-headline').textContent = ai && ai.headline ? ai.headline : '';
+  if (ai && !ai.error) {
+    const box = [el('p', '', ai.summary)];
+    const ul = el('ul'); (ai.highlights || []).forEach((h) => ul.append(el('li', '', h))); box.push(ul);
+    if (ai.watch_for) box.push(el('div', 'watch', `👀 ${ai.watch_for}`));
+    $('day-ai').replaceChildren(...box);
+  } else if (ai && ai.error) {
+    $('day-ai').textContent = 'The day\'s note couldn\'t be written just now.';
+  }
 }
 
 // ------------------------------------------------------------------ Pixie Card (demo)
@@ -205,7 +310,8 @@ function renderCalm(child) {
   $('hero-avatar').textContent = child[0];
   $('ring').className = `ring ${!b.connected ? 'offline' : L.on ? 'listening' : ''}`;
   $('hero-title').textContent = b.connected ? `${child} is OK` : `Can't reach ${child}'s band`;
-  $('calm-sub').textContent = b.connected ? 'Double-tap the band = "I need you"' : 'Alerts can\'t reach you until it reconnects';
+  $('calm-sub').textContent = !b.connected ? 'Alerts can\'t reach you until it reconnects'
+    : S.gesture === 'once' ? 'Double-tap the band = "I need you"' : 'Double-tap twice = "I need you"';
   // battery gauge
   const bat = b.battery;
   const g = $('t-bat');
@@ -268,8 +374,10 @@ function renderAlert(a, child) {
   else if (a.state === 'checking') title = `Checking on ${child}`;
   else if (danger) title = `A worrying adult is talking to ${child}`;
   else if (a.kind === 'distress') title = plain(a.reasons[0]);
+  else if (a.trigger === 'voice') title = urgent ? `${child} is calling for you, urgently` : `${child} is calling for you`;
   else title = urgent ? `${child} needs you now` : `${child} wants you`;
   $('a-title').textContent = title;
+  if (a.trigger === 'voice' && ['listening', 'waiting'].includes(a.state)) $('a-icon').textContent = '🗣️';
 
   $('a-danger').classList.toggle('hidden', !danger);
   if (danger) {
@@ -293,7 +401,8 @@ function renderAlert(a, child) {
   const listening = a.state === 'listening';
   $('a-live').classList.toggle('hidden', !listening);
   $('a-live-text').textContent = a.live_text ? `“${a.live_text}”` : `Listening to ${child}…`;
-  const quote = !listening && !danger && a.transcript ? `“${a.transcript}”` : '';
+  const said = a.trigger === 'voice' && a.call_words ? a.call_words : (!listening ? a.transcript : '');
+  const quote = !danger && said ? `“${said}”` : '';
   $('a-quote').textContent = quote; $('a-quote').classList.toggle('hidden', !quote);
 
   // actions (#2 first) + next step (#4 no dead end)
@@ -367,10 +476,14 @@ function historyTitle(e, child) {
   if (e.kind === 'distress' && e.concern_quotes && e.concern_quotes.length) return `Worrying adult talked to ${child}`;
   if (e.kind === 'distress') return plain(e.reasons[0]);
   if (e.kind === 'note') return plain(e.reasons[0].split(':')[0]);
+  if (e.kind === 'alone') return plain(e.reasons[0]);
+  if (e.trigger === 'voice') return `${child} called for you`;
   return e.level >= 2 ? `${child} needed you urgently` : `${child} asked for you`;
 }
 function historyIcon(e) {
   if (e.kind === 'fall') return '🤸';
+  if (e.kind === 'alone') return '💬';
+  if (e.trigger === 'voice') return '🗣️';
   if (e.kind === 'note') return '🗣';
   if (e.kind === 'distress') return e.level >= 2 ? '🚨' : '😢';
   return e.level >= 2 ? '🚨' : '🙋';
@@ -403,7 +516,7 @@ function renderHistory(child) {
       play.onclick = () => new Audio(`/recordings/${encodeURIComponent(e.audio)}`).play();
       foot.append(play);
     }
-    if (e.kind !== 'note') {
+    if (!['note', 'alone'].includes(e.kind)) {
       if (e.outcome) {
         const o = el('span', 'outcome'); o.append(el('b', '', OUTCOME_WORDS[e.outcome] || e.outcome)); foot.append(o);
       } else {
@@ -428,6 +541,8 @@ function renderHistory(child) {
 // ------------------------------------------------------------------ settings (#10)
 function renderSettings() {
   renderWalletSettings(S.wallet);
+  if (document.activeElement !== $('s-quiet')) $('s-quiet').value = String(S.quiet_minutes);
+  if (document.activeElement !== $('s-gesture')) $('s-gesture').value = S.gesture || 'twice';
   const n = (S.history || []).length;
   $('s-hist-count').textContent = n ? `${n} entr${n === 1 ? 'y' : 'ies'}: past alerts, device events and their recordings` : 'Nothing to clear';
   $('s-clear-history').disabled = !n;
@@ -473,9 +588,14 @@ function open() {
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.binaryType = 'arraybuffer';
   ws.onmessage = (e) => {
-    if (typeof e.data !== 'string') return;       // live audio is for the control room
+    if (typeof e.data !== 'string') return playPcm(e.data);   // live sound (only played while listening in)
     const m = JSON.parse(e.data);
-    if (m.type === 'pixie') { S = m; render(); }
+    if (m.type === 'pixie') {
+      const first = !S;
+      S = m; render();
+      if (first && PARAMS.get('day')) openDay(PARAMS.get('day'));   // /mom?day=typical opens the day picture
+    }
+    else if (m.type === 'day') renderDay(m);
   };
   ws.onclose = () => {
     if (S) { S.band.connected = false; S.band.state = 'offline'; S.notice = 'Lost connection to Pixie, retrying…'; render(); }
