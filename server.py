@@ -37,7 +37,7 @@ import time  # noqa: E402
 BAND = 6                                           # our band: Vexo-HACK-06
 PORT = 8765
 REC_DIR = ROOT / "recordings"
-SENSORS = dict(motion=50, events=True, activity=True, battery=10, temperature=2, link=True)
+SENSORS = dict(motion=50, events=True, activity=0.5, battery=10, temperature=2, link=True)   # steps 2x/s
 PIXIE_COMMANDS = {"ack", "resolve", "label", "hug", "find", "simulate", "fall_check", "listen", "call", "wallet", "clear_history"}
 DATA_EVENTS = ["motion", "event", "activity", "battery", "temperature", "link", "mic-level"]
 
@@ -83,6 +83,7 @@ class Hub:
         self.motion_hist = collections.deque(maxlen=600)   # (time, |a| in g), ~12 s at 50 Hz
         self.packets = collections.deque(maxlen=50 * 60)  # (time, seq, opus): last 60 s, RAM only
         self.levels = collections.deque(maxlen=600)        # (time, rms_db) from mic-level
+        self.steps_hist = collections.deque(maxlen=20)     # (time, lifetime steps) from activity
         self.pixie = Pixie(self, ROOT / ("data-sim" if transport == "sim" else "data"))   # keep tests apart
 
     # ---------------------------------------------------------------- rolling audio buffer
@@ -118,6 +119,8 @@ class Hub:
         self.latest[name] = m
         if name == "mic-level":
             self.levels.append((time.time(), m["rms_db"]))
+        elif name == "activity" and m.get("steps") is not None:
+            self.steps_hist.append((time.time(), m["steps"]))
         if name == "motion":
             self.counts["motion"] += 1
             self.motion_hist.append((time.time(), math.sqrt(m["ax"] ** 2 + m["ay"] ** 2 + m["az"] ** 2)))
@@ -125,6 +128,20 @@ class Hub:
             print("  [gesture] %s%s" % (m.get("kind"), " " + m["face"] if m.get("face") else ""))
         self.push(dict(m, type=name))
         self.pixie.on_data(name, m)
+
+    def live_activity(self):
+        """Still / walk / run from the last 2 s of motion: reacts in ~1 s, unlike the band's own
+        activity classifier. Wrist swing while walking moves |a| by ~0.05-0.3 g; running more."""
+        now = time.time()
+        recent = [g for t, g in list(self.motion_hist) if now - t < 2.0]
+        steps = [s for t, s in list(self.steps_hist) if now - t < 3.0]
+        stepping = len(steps) >= 2 and steps[-1] > steps[0]          # new steps counted in the last 3 s
+        if len(recent) < 20:
+            return "walk" if stepping else (self.latest.get("activity") or {}).get("state")
+        mean = sum(recent) / len(recent)
+        dev = sum(abs(g - mean) for g in recent) / len(recent)
+        state = "still" if dev < 0.04 else "walk" if dev < 0.35 else "run"
+        return "walk" if state == "still" and stepping else state
 
     def motion_context(self):
         """What the wearer's body was doing in the 10 s before now, for the alert and the AI."""

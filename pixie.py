@@ -99,7 +99,9 @@ class Pixie:
             "band": {
                 "connected": st["state"] == "connected", "state": st["state"], "name": st["band"],
                 "battery": bat.get("percent"), "charging": bat.get("charging"),
-                "rssi": rssi, "signal": signal_label(rssi), "activity": act.get("state"),
+                "rssi": rssi, "signal": signal_label(rssi),
+                "activity": self.hub.live_activity() or act.get("state"), "band_activity": act.get("state"),
+                "cadence": act.get("cadence"),
                 "steps": (act["steps"] - self.steps_start) if act.get("steps") is not None else None,
                 "last_seen": self.last_seen, "mic": st["mic"],
             },

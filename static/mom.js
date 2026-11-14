@@ -107,6 +107,13 @@ function render() {
 
 // ------------------------------------------------------------------ Pixie Card (demo)
 const money = (v) => `$${Number(v).toFixed(2)}`;
+const CAT_ICON = { snacks: '🍬', drinks: '🧃', toys: '🧸', games: '🎮' };
+function openSettings(anchor) {
+  $('settings').classList.remove('hidden');
+  if (anchor) setTimeout(() => $(anchor).scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+}
+$('w-edit').onclick = () => openSettings('s-card');
+$('t-money').onclick = () => (S && S.wallet && S.wallet.card ? $('wallet').scrollIntoView({ behavior: 'smooth' }) : openSettings('s-card'));
 let lastAskId = null;
 function renderWallet(W, child) {
   if (!W) return;
@@ -121,17 +128,25 @@ function renderWallet(W, child) {
   }
   $('w-setup').classList.toggle('hidden', !!W.card);
   $('w-card').classList.toggle('hidden', !W.card);
+  $('w-stats').classList.toggle('hidden', !W.card);
+  $('w-edit').classList.toggle('hidden', !W.card);
   if (W.card) {
     $('w-left').textContent = money(W.left_today);
     $('w-bar').style.width = `${W.daily ? Math.min(100, (W.left_today / W.daily) * 100) : 0}%`;
+    $('w-spent').textContent = `Spent ${money(W.spent_today)} of ${money(W.daily)} today`;
     $('w-name').textContent = W.card.name.toUpperCase();
     $('w-paused').classList.toggle('hidden', !W.frozen);
+    $('w-per').textContent = money(W.per_purchase).replace('.00', '');
+    $('w-cats').textContent = Object.entries(W.categories).filter(([, on]) => on).map(([k]) => CAT_ICON[k] || '•').join('') || '—';
+    $('w-status').textContent = W.frozen ? '⏸' : '✅';
+    $('w-status-l').textContent = W.frozen ? 'paused' : 'active';
   }
-  $('w-recent').replaceChildren(...W.recent.slice(0, 4).map((t) => {
+  $('w-recent-h').classList.toggle('hidden', !W.recent.length);
+  $('w-recent').replaceChildren(...W.recent.map((t) => {
     const ok = t.status === 'approved';
     const li = el('li', ok ? '' : 'declined');
     li.title = `${t.item} · ${clockTime(t.t)}${ok ? (t.by_parent ? ' · you approved' : '') : ` · declined${t.note ? ': ' + t.note : ''}`}`;
-    li.append(el('div', 'em', t.emoji), el('span', `amt ${ok ? '' : 'no'}`, ok ? money(t.amount) : 'No'),
+    li.append(el('div', 'em', t.emoji), el('span', 'nm', t.item), el('span', `amt ${ok ? '' : 'no'}`, ok ? money(t.amount) : 'Declined'),
       el('small', '', clockTime(t.t)));
     if (t.by_parent) li.append(el('span', 'badge-x', ok ? '👍' : '✋'));
     else if (!ok) li.append(el('span', 'badge-x', '✋'));
@@ -171,6 +186,7 @@ function confirmButton(btn, label, run) {
   };
 }
 confirmButton($('s-clear-history'), 'Clear', () => send({ cmd: 'clear_history' }));
+confirmButton($('h-clear'), '🗑 Clear', () => send({ cmd: 'clear_history' }));
 confirmButton($('s-clear-tx'), 'Clear', () => send({ cmd: 'wallet', action: 'clear_tx' }));
 
 $('s-daily').onchange = (e) => send({ cmd: 'wallet', action: 'set', daily: e.target.value });
@@ -201,6 +217,21 @@ function renderCalm(child) {
   // activity
   const [ic, word] = ACTIVITY_ICON[b.activity] || ['🧍', 'Activity'];
   $('t-act').textContent = ic; $('t-act-l').textContent = word;
+  $('t-steps').textContent = b.steps == null ? '' : `👣 ${b.steps}`;
+  // Pixie Card: money left today
+  const W = S.wallet;
+  const mg = $('t-money-g');
+  if (W && W.card) {
+    const pct = W.daily ? (W.left_today / W.daily) * 100 : 0;
+    mg.style.setProperty('--p', pct);
+    mg.style.setProperty('--c', W.frozen ? '#9e9e9e' : pct < 20 ? '#c62828' : '#b5179e');
+    $('t-money-v').textContent = `$${Math.floor(W.left_today)}`;
+    $('t-money-l').textContent = W.frozen ? 'Card paused' : 'Left today';
+  } else {
+    mg.style.setProperty('--p', 0);
+    $('t-money-v').textContent = '💳';
+    $('t-money-l').textContent = 'Set up card';
+  }
   // listening
   const worry = L.on && !L.quiet && L.last && Object.keys(SIGNAL_WORDS).some((k) => (L.last[k] || 0) >= 0.4);
   $('t-listen').textContent = !L.on ? '🔇' : worry ? '👂' : '🎧';
@@ -381,6 +412,7 @@ function renderHistory(child) {
     nodes.push(item);
   }
   if (!nodes.length) nodes.push(el('div', 'empty', `Nothing yet. Alerts from ${child}'s band will show up here.`));
+  $('h-clear').classList.toggle('hidden', !all.length);
   box.replaceChildren(...nodes);
   $('device-log-sum').textContent = `Device & app events (${device.length})`;
   $('device-events').replaceChildren(...device.map((e) => el('li', '', `${clockTime(e.created)} · ${plain(e.reasons[0])}`)));

@@ -168,8 +168,21 @@ main { padding: 14px; display: grid; gap: 14px; }
 .pbar { height: 8px; background: rgba(255,255,255,.25); border-radius: 99px; margin-top: 8px; overflow: hidden; }
 .pbar i { display: block; height: 100%; background: #fff; border-radius: 99px; }
 .paused { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: #1b1830; padding: 3px 10px; border-radius: 99px; font-size: 12px; font-weight: 800; }
-.tx { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.tx li { position: relative; display: grid; justify-items: center; gap: 2px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px 4px; font-size: 12px; text-align: center; }
+.sec-head { display: flex; justify-content: space-between; align-items: center; margin: 6px 2px 0; }
+.sec-head h2 { font-size: 18px; margin: 0; color: var(--ink); text-transform: none; letter-spacing: 0; }
+.sec-sub { font-size: 12px; font-weight: 700; color: var(--dim); margin: 4px 2px -2px; text-transform: uppercase; letter-spacing: .06em; }
+.pcard-spent { font-size: 13px; margin-top: 6px; opacity: .9; }
+.wstats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.wstats > div { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 6px; text-align: center; display: grid; gap: 2px; }
+.wstats b { font-size: 18px; } .wstats small { font-size: 11px; color: var(--dim); }
+.tx { list-style: none; margin: 0; padding: 2px 0 6px; display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; }
+.tx li { flex: 0 0 92px; scroll-snap-align: start; position: relative; display: grid; justify-items: center; gap: 2px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px 4px; font-size: 12px; text-align: center; }
+.tx .nm { font-weight: 600; font-size: 12px; line-height: 1.2; }
+.tiles { grid-template-columns: repeat(5, 1fr) !important; gap: 6px !important; }
+.tile { padding: 10px 2px 8px !important; }
+.tile-num { font-size: 11px; color: var(--ink); margin-top: -4px; }
+.money-tile { border: 0; cursor: pointer; font: inherit; color: inherit; }
+.money-tile .gauge span { font-size: 10px; }
 .tx .em { font-size: 30px; line-height: 1.1; }
 .tx .amt { font-weight: 800; font-size: 13px; } .tx .no { color: var(--red); }
 .tx li.declined .em { filter: grayscale(1); opacity: .5; }
@@ -181,7 +194,7 @@ main { padding: 14px; display: grid; gap: 14px; }
 .catlist label { font-size: 13px; border: 1px solid var(--line); border-radius: 99px; padding: 4px 10px; display: flex; gap: 4px; align-items: center; }
 
 /* history */
-.history h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 4px 2px 8px; }
+.history > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 4px 2px 8px; }
 .day { font-size: 12px; font-weight: 700; color: var(--dim); margin: 12px 2px 6px; }
 .item { position: relative; display: flex; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; margin-bottom: 10px; }
 .item:not(:last-child)::after { content: ""; position: absolute; left: 32px; bottom: -11px; width: 3px; height: 10px; background: var(--line); }
