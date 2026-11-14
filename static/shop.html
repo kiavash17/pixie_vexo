@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sweet Corner · Pixie Pay (demo)</title>
+<style>
+  :root { --ink: #2b1b12; --bg: #fff7ec; --brand: #e4572e; --line: #f0dcc5; --green: #1b7a46; --red: #c62828; --amber: #b56a00; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--brand); color: #fff; padding: 16px 22px; display: flex; align-items: baseline; gap: 12px; }
+  header h1 { margin: 0; font-size: 26px; } header span { opacity: .9; }
+  .demo { margin-left: auto; font-size: 12px; background: rgba(255,255,255,.25); padding: 3px 10px; border-radius: 99px; }
+  main { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; padding: 20px; max-width: 1050px; margin: 0 auto; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; align-content: start; }
+  .item { background: #fff; border: 2px solid var(--line); border-radius: 18px; padding: 16px; text-align: center; cursor: pointer; font: inherit; color: inherit; }
+  .item:hover { border-color: var(--brand); } .item.sel { border-color: var(--brand); box-shadow: 0 0 0 4px rgba(228,87,46,.18); }
+  .item .e { font-size: 46px; } .item b { display: block; margin-top: 6px; } .item .p { color: var(--brand); font-weight: 800; }
+  .reader { background: #1f1a24; color: #fff; border-radius: 26px; padding: 24px; text-align: center; min-height: 360px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; }
+  .reader .icon { font-size: 64px; } .reader .big { font-size: 24px; font-weight: 800; } .reader .small { opacity: .8; font-size: 15px; }
+  .reader.ok { background: var(--green); } .reader.no { background: var(--red); } .reader.ask { background: var(--amber); }
+  .waves { font-size: 64px; animation: pulse 1s infinite; } @keyframes pulse { 50% { opacity: .35; transform: scale(.95); } }
+  .reader button { font: inherit; border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 700; cursor: pointer; }
+  .tapbtn { background: #fff; color: #1f1a24; } .cancel { background: transparent; color: #fff; text-decoration: underline; }
+  .card { margin-top: 12px; font-size: 14px; opacity: .85; }
+</style>
+</head>
+<body>
+<header><h1>🍬 Sweet Corner</h1><span>Pay with your Pixie band</span><span class="demo">DEMO SHOP · no real money</span></header>
+<main>
+  <section class="items" id="items"></section>
+  <section class="reader" id="reader"></section>
+</main>
+<script>
+// Pretend shop till. Picking an item arms the reader; a single tap on the band (or the demo
+// button) pays. The server decides with the parent's budget rules (wallet.py).
+const $ = (id) => document.getElementById(id);
+const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x !== undefined) e.textContent = x; return e; };
+const money = (v) => `$${Number(v).toFixed(2)}`;
+let ws, W = null, child = 'Maya', resetTimer = null;
+const send = (o) => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
+
+function renderItems() {
+  const sel = W.pending && ['waiting_tap', 'asking'].includes(W.pending.state) ? W.pending.item.id : null;
+  $('items').replaceChildren(...W.items.map((it) => {
+    const b = el('button', `item ${sel === it.id ? 'sel' : ''}`);
+    b.append(el('div', 'e', it.emoji), el('b', '', it.name), el('div', 'p', money(it.price)));
+    b.onclick = () => send({ cmd: 'wallet', action: 'arm', item: it.id });
+    return b;
+  }));
+}
+function renderReader() {
+  const r = $('reader'), p = W.pending;
+  r.className = 'reader';
+  const parts = [];
+  if (!p) {
+    parts.push(el('div', 'icon', '🛒'), el('div', 'big', 'Pick a treat'), el('div', 'small', `Then tap your Pixie band on the reader`));
+  } else if (p.state === 'waiting_tap') {
+    const left = Math.max(0, Math.round(p.expires - Date.now() / 1000));
+    parts.push(el('div', 'waves', '📶'), el('div', 'big', `${p.item.emoji} ${p.item.name} · ${money(p.item.price)}`),
+      el('div', 'small', `Tap your Pixie band once on the reader (${left} s)`));
+    const tap = el('button', 'tapbtn', '👆 Simulate band tap'); tap.onclick = () => send({ cmd: 'wallet', action: 'tap' });
+    const cancel = el('button', 'cancel', 'Cancel'); cancel.onclick = () => send({ cmd: 'wallet', action: 'cancel' });
+    parts.push(tap, cancel);
+  } else if (p.state === 'asking') {
+    r.classList.add('ask');
+    parts.push(el('div', 'icon', '⏳'), el('div', 'big', `Asking a grown-up…`), el('div', 'small', p.message));
+  } else {
+    r.classList.add(p.state === 'approved' ? 'ok' : 'no');
+    parts.push(el('div', 'icon', p.state === 'approved' ? '✅' : p.state === 'expired' ? '⌛' : '❌'),
+      el('div', 'big', p.state === 'approved' ? 'Paid!' : p.state === 'expired' ? 'No tap' : 'Not this time'),
+      el('div', 'small', p.message));
+    if (W.card && p.state === 'approved') parts.push(el('div', 'card', `${money(W.left_today)} left today`));
+    if (!resetTimer) resetTimer = setTimeout(() => { resetTimer = null; send({ cmd: 'wallet', action: 'cancel' }); }, 6000);
+  }
+  r.replaceChildren(...parts);
+}
+setInterval(() => W && renderReader(), 1000);
+
+function open() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onmessage = (e) => {
+    if (typeof e.data !== 'string') return;
+    const m = JSON.parse(e.data);
+    if (m.type === 'pixie') { W = m.wallet; child = m.child; renderItems(); renderReader(); }
+  };
+  ws.onclose = () => setTimeout(open, 1500);
+}
+open();
+</script>
+</body>
+</html>

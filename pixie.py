@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 import gemini
+from wallet import Wallet
 
 CHILD = "Maya"
 GUARDIANS = [{"name": "Mom", "role": "primary"}, {"name": "Dad", "role": "secondary"}]
@@ -36,6 +37,9 @@ LED = {                                   # (colour, pattern, period ms); mic-on
     "ruok": ("#ff00ff", "blink", 500),         # magenta: are you OK?
     "hug": ("#ff66cc", "breathe", 1200),       # pink: guardian sent a hug
     "ok": ("#ffffff", "flash", 300),           # white flash: resolved
+    "paid": ("#00ff55", "flash", 200),         # Pixie Card: approved
+    "declined": ("#ff2200", "flash", 200),     # Pixie Card: declined
+    "asking": ("#ffaa00", "breathe", 800),     # Pixie Card: asking a grown-up
 }
 URGENT_WORDS = ("hurt", "help", "lost", "scared", "stranger", "bleeding", "fell", "fall", "can't find",
                 "emergency", "pain", "afraid", "crying", "come now", "hurry")
@@ -77,7 +81,10 @@ class Pixie:
         self.listen = {"last": None, "t": None, "quiet": True, "error": None}
         self.recent = collections.deque(maxlen=3)
         self.convo = collections.deque(maxlen=60)          # (time, words) heard in listening mode
+        self.concern_quotes = collections.deque(maxlen=12)  # (time, adult's worrying words)
         self.last_anger_note = 0.0
+        self.child, self.guardian = CHILD, GUARDIANS[0]["name"]
+        self.wallet = Wallet(self, data_dir / "wallet.json")
 
     # ================================================================ snapshot for the page
     def snapshot(self):
@@ -97,6 +104,7 @@ class Pixie:
                 "last_seen": self.last_seen, "mic": st["mic"],
             },
             "notice": self.notice, "fall_check": self.fall_check,
+            "wallet": self.wallet.snapshot(),
             "listen": dict(self.listen, on=self.listening, gemini=gemini.available(),
                            requests_hour=gemini.requests_last_hour()),
             "active": self.active, "history": self.history[-30:][::-1],
@@ -114,6 +122,8 @@ class Pixie:
             kind = m.get("kind")
             if kind == "double-tap":
                 self.on_double_tap()
+            elif kind == "tap" and self.wallet.pending:        # tap-to-pay at the shop reader
+                asyncio.ensure_future(self.wallet.on_tap())
             elif kind == "free-fall" and self.fall_check:
                 self.on_fall()
         elif name == "battery":
@@ -271,6 +281,7 @@ class Pixie:
             if not a or a["id"] != eid or a["state"] not in ("listening", "waiting"):
                 return
             a["escalation"] = i
+            a["stalled"] = i == len(steps)                   # every step done: the page offers next steps
             self.timeline(text)
             self.publish()
 
@@ -281,6 +292,8 @@ class Pixie:
             a["reasons"].append(why)
             self.timeline("URGENT: %s" % why)
             asyncio.ensure_future(self.apply_led())
+            if a.get("ai") is not None:                      # keep the summary in step with the level
+                self.spawn(self.assess(a["id"]))
 
     # ================================================================ guardian actions
     async def command(self, cmd):
@@ -295,6 +308,11 @@ class Pixie:
                 await self.apply_led()
         elif c == "listen":
             await self.set_listening(bool(cmd.get("on")))
+        elif c == "wallet":
+            await self.wallet.command(cmd)
+        elif c == "call" and a:
+            self.timeline("%s called %s (simulated call)" % (cmd.get("by", GUARDIANS[0]["name"]),
+                                                           cmd.get("who", GUARDIANS[1]["name"])))
         elif c == "resolve" and a:
             self.timeline("%s marked it resolved" % cmd.get("by", GUARDIANS[0]["name"]))
             self.finish(outcome=cmd.get("outcome"))
@@ -304,10 +322,16 @@ class Pixie:
                     e["outcome"] = cmd["outcome"]
             self.save()
         elif c == "hug":
-            await self.flash_led("hug", 4)
+            if self.listening:
+                self.spawn(self.pause_for_light(lambda: self.flash_led("hug", 4)))
+            else:
+                await self.flash_led("hug", 4)
             self.log_line("%s sent %s a hug (pink glow)" % (GUARDIANS[0]["name"], CHILD))
-        elif c == "find" and self.hub.band and not self.hub.status["mic"]:
-            await self.hub.band.identify(5)
+        elif c == "find" and self.hub.band:
+            if self.listening:
+                self.spawn(self.pause_for_light(lambda: self.identify(5)))
+            elif not self.hub.status["mic"]:
+                await self.identify(5)
         elif c == "simulate":
             if cmd.get("what") == "double-tap":
                 self.last_tap = 0
@@ -316,9 +340,13 @@ class Pixie:
                 self.on_fall()
             elif cmd.get("what") in ("crying", "screaming", "adult_anger", "adult_concerning"):
                 k = cmd["what"]
+                luring = k == "adult_concerning"
                 fake = {"crying": 0.1, "screaming": 0.1, "adult_anger": 0.1, "adult_concerning": 0.0,
-                        "concern": "(simulated) asked the child to keep a secret and come to the car"
-                        if k == "adult_concerning" else "", "child_distress": 0.8,
+                        "concern": "offered puppies to get the child into a van and asked them to keep it secret"
+                        if luring else "",
+                        "concern_quote": "I've got some puppies in my van. It'll be our little secret, don't tell "
+                                         "your mom." if luring else "",
+                        "child_distress": 0.8,
                         "children": 1, "adults": 1 if k.startswith("adult") else 0, "transcript": "",
                         "evidence": "(simulated %s from the demo button)" % k.replace("_", " ")}
                 fake[k] = 0.95
@@ -384,6 +412,31 @@ class Pixie:
         if self.listening and self.hub.band:
             await self.hub.set_mic(True, record=False)
 
+    async def show_light(self, name, seconds):
+        """Short light signal (payments). An open alert keeps its own light."""
+        if self.active or not self.hub.band:
+            return
+        if self.listening:
+            await self.pause_for_light(lambda: self.flash_led(name, seconds))
+        elif not self.hub.status["mic"]:
+            await self.flash_led(name, seconds)
+
+    async def pause_for_light(self, show):
+        """Mic off, run `show()` (a light effect), then listen again."""
+        await self.hub.set_mic(False)
+        try:
+            await show()
+        finally:
+            if self.listening and self.hub.band:
+                await self.hub.set_mic(True, record=False)
+
+    async def identify(self, seconds):
+        try:
+            await self.hub.band.identify(seconds)
+            await asyncio.sleep(seconds)
+        except Exception as e:
+            print("  [pixie] find: %s" % e)
+
     async def listen_loop(self):
         loop = asyncio.get_running_loop()
         while True:
@@ -425,6 +478,15 @@ class Pixie:
         self.recent.append(r)
         if r.get("transcript"):
             self.convo.append((now, r["transcript"]))
+        quote = (r.get("concern_quote") or "").strip()
+        if quote and r["adult_concerning"] >= 0.4 and quote not in [q for _, q in self.concern_quotes]:
+            self.concern_quotes.append((now, quote))
+            a = self.active                                  # an open luring alert keeps collecting quotes
+            if a and a.get("concern_quotes") is not None and quote not in a["concern_quotes"]:
+                a["concern_quotes"].append(quote)
+                if r.get("concern"):
+                    a["concern"] = r["concern"]
+                self.timeline('Adult said: "%s"' % quote)
         print("  [listen] cry %.2f scream %.2f anger %.2f concern %.2f | %d child %d adult | %s"
               % (r["crying"], r["screaming"], r["adult_anger"], r["adult_concerning"], r["children"],
                  r["adults"], (r.get("concern") or r.get("evidence", ""))[:70]))
@@ -464,6 +526,7 @@ class Pixie:
         recent_words = " … ".join(w for t, w in self.convo if now - t <= CONTEXT_SECONDS)
         a["transcript"] = recent_words if "adult_concerning" in found else r.get("transcript", "")
         a["concern"] = r.get("concern", "")
+        a["concern_quotes"] = [q for t, q in self.concern_quotes if now - t <= CONTEXT_SECONDS]
         a["audio"] = "distress-%s.ogg" % a["id"]
         self.active = a
         before = CONCERN_CLIP if "adult_concerning" in found else CLIP_BEFORE

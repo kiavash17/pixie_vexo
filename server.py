@@ -38,7 +38,7 @@ BAND = 6                                           # our band: Vexo-HACK-06
 PORT = 8765
 REC_DIR = ROOT / "recordings"
 SENSORS = dict(motion=50, events=True, activity=True, battery=10, temperature=2, link=True)
-PIXIE_COMMANDS = {"ack", "resolve", "label", "hug", "find", "simulate", "fall_check", "listen"}
+PIXIE_COMMANDS = {"ack", "resolve", "label", "hug", "find", "simulate", "fall_check", "listen", "call", "wallet"}
 DATA_EVENTS = ["motion", "event", "activity", "battery", "temperature", "link", "mic-level"]
 
 
@@ -380,6 +380,7 @@ def main():
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/", lambda r: web.FileResponse(ROOT / "static" / "index.html"))
     app.router.add_get("/mom", lambda r: web.FileResponse(ROOT / "static" / "mom.html"))
+    app.router.add_get("/shop", lambda r: web.FileResponse(ROOT / "static" / "shop.html"))
     REC_DIR.mkdir(exist_ok=True)
     app.router.add_static("/recordings/", REC_DIR)
     app.router.add_static("/static/", ROOT / "static")

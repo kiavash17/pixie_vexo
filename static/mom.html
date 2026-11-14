@@ -3,121 +3,206 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#6c4cf1">
+<meta name="theme-color" content="#5b3fd9">
 <title>Pixie · Guardian</title>
 <link rel="stylesheet" href="/static/mom.css">
 </head>
 <body>
 <div class="phone">
+
+  <!-- header: who + always-visible band status (#6) -->
   <header class="appbar">
-    <div class="logo">✦ Pixie</div>
-    <div class="who"><span class="avatar" id="avatar">M</span><span id="child">Maya</span><span id="dot" class="dot"></span></div>
-  </header>
-
-  <div id="notice" class="notice hidden"></div>
-  <button id="sound" class="sound">🔔 Tap to enable alert sounds</button>
-
-  <!-- active alert -->
-  <section id="alert" class="alert hidden">
-    <div class="alert-top">
-      <div class="alert-icon" id="a-icon">🙋</div>
+    <div class="brand">✦ Pixie</div>
+    <div class="who">
+      <span class="avatar" id="avatar">M</span>
       <div>
-        <div class="alert-title" id="a-title">Maya wants you</div>
-        <div class="alert-sub" id="a-sub">just now</div>
+        <div class="child" id="child">Maya</div>
+        <div class="bandline" id="bandline"><span class="sdot"></span><span id="bandtext">Connecting…</span></div>
       </div>
     </div>
-    <div id="a-countdown" class="countdown hidden"></div>
+    <button class="icon" id="open-settings" aria-label="Settings">⚙</button>
+  </header>
 
-    <div id="a-listen" class="listen hidden">
-      <span class="pulse"></span><span>Listening to Maya…</span>
-      <div class="live" id="a-live"></div>
-    </div>
+  <!-- offline / low battery / sound off: full-width banners -->
+  <div id="banner" class="banner hidden" role="alert"></div>
+  <button id="sound-off" class="banner warn hidden">🔕 Alert sounds are off. Tap to turn them on.</button>
 
-    <div id="a-chips" class="chips"></div>
+  <main>
+    <!-- active alert: action first (#2), details folded -->
+    <section id="alert" class="alert hidden" aria-live="assertive">
+      <div class="state-chip" id="a-chip">⚠ Needs you</div>
+      <h1 id="a-title">Maya wants you</h1>
+      <p class="reason" id="a-reason"></p>
+      <p class="meta" id="a-meta"></p>
 
-    <div id="a-ai" class="ai hidden">
-      <div class="ai-head"><span id="a-ai-src" class="badge">AI</span> <b id="a-ai-sum"></b></div>
-      <div class="ai-why" id="a-ai-why"></div>
-      <div class="ai-act" id="a-ai-act"></div>
-    </div>
+      <!-- worrying adult: behaviour + exact words, shown immediately -->
+      <div id="a-danger" class="danger-box hidden">
+        <div class="danger-label">What Pixie detected</div>
+        <p class="danger-behaviour" id="a-behaviour"></p>
+        <div class="danger-label">What the adult said</div>
+        <ul class="danger-quotes" id="a-quotes"></ul>
+      </div>
 
-    <div id="a-voice" class="voice hidden">
-      <div class="quote" id="a-quote"></div>
-      <audio id="a-audio" controls preload="none"></audio>
-    </div>
+      <div id="a-live" class="live hidden"><span class="pulse"></span><span id="a-live-text">Listening to Maya…</span></div>
+      <blockquote id="a-quote" class="quote hidden"></blockquote>
 
-    <div class="buttons" id="a-buttons">
-      <button class="primary" id="b-coming">I'm coming</button>
-      <button class="ghost" id="b-resolve">Resolved</button>
-    </div>
-    <div class="outcomes hidden" id="a-outcomes">
-      <div class="label">What was it?</div>
-      <button data-o="accidental">Accidental</button>
-      <button data-o="wanted me">Wanted me</button>
-      <button data-o="urgent">Urgent</button>
-    </div>
+      <div class="actions" id="a-actions">
+        <button class="btn primary" id="b-coming">I'm coming</button>
+        <button class="btn secondary" id="b-allgood">All good</button>
+      </div>
+      <div class="actions hidden" id="a-stalled">
+        <button class="btn primary" id="b-call">📞 Call Dad</button>
+        <button class="btn secondary" id="b-handled">Mark as handled</button>
+      </div>
+      <p class="next" id="a-next"></p>
 
-    <details class="timeline" open>
-      <summary>Timeline</summary>
-      <ol id="a-timeline"></ol>
-    </details>
-  </section>
+      <!-- resolve sheet (#8 of first list, folded into the flow) -->
+      <div class="sheet hidden" id="a-sheet">
+        <p>Glad it's okay. What happened?</p>
+        <div class="choices">
+          <button data-o="wanted me">Just wanted me</button>
+          <button data-o="accidental">Pocket tap</button>
+          <button data-o="urgent">Real problem</button>
+          <button data-o="">Skip</button>
+        </div>
+      </div>
 
-  <!-- calm state -->
-  <section id="calm" class="calm">
-    <div class="calm-icon">🌙</div>
-    <div class="calm-title">All calm</div>
-    <div class="calm-sub" id="calm-sub">Maya can double-tap the band whenever they need you.</div>
-  </section>
+      <div class="chips" id="a-chips"></div>
 
-  <!-- listening mode -->
-  <section class="card listen">
-    <div class="listen-head">
-      <h2>Listening mode</h2>
-      <label class="switch"><input type="checkbox" id="b-listen"><span></span></label>
-    </div>
-    <div class="listen-body" id="l-body">Off. When on, Pixie listens for crying, screaming and angry adult voices (the band's light stays blue).</div>
-    <div class="meters hidden" id="l-meters">
-      <div><label>Crying</label><div class="bar"><i id="m-crying"></i></div></div>
-      <div><label>Screaming</label><div class="bar"><i id="m-screaming"></i></div></div>
-      <div><label>Adult anger</label><div class="bar"><i id="m-adult_anger"></i></div></div>
-      <div><label>Concerning adult behaviour</label><div class="bar"><i id="m-adult_concerning"></i></div></div>
-      <div class="voices" id="l-voices"></div>
-    </div>
-  </section>
+      <details class="details" id="a-details">
+        <summary>Details</summary>
+        <div id="a-ai" class="ai hidden">
+          <div class="ai-label">✦ Pixie AI</div>
+          <p id="a-ai-why"></p>
+          <p class="ai-act" id="a-ai-act"></p>
+        </div>
+        <div id="a-voice" class="voice hidden">
+          <div class="voice-label" id="a-voice-label">Voice note</div>
+          <audio id="a-audio" controls preload="none"></audio>
+        </div>
+        <ol class="timeline" id="a-timeline"></ol>
+      </details>
+    </section>
 
-  <!-- band status -->
-  <section class="card status">
-    <h2>Band</h2>
-    <div class="grid">
-      <div><label>Connection</label><b id="s-conn">–</b><small id="s-seen"></small></div>
-      <div><label>Battery</label><b id="s-bat">–</b></div>
-      <div><label>Distance</label><b id="s-dist">–</b><small id="s-rssi"></small></div>
-      <div><label>Activity</label><b id="s-act">–</b><small id="s-steps"></small></div>
-    </div>
-    <div class="row">
-      <button id="b-hug">💗 Send a hug</button>
-      <button id="b-find">🔦 Find band</button>
-      <label class="toggle"><input type="checkbox" id="b-fall" checked> Fall check</label>
-    </div>
-  </section>
+    <!-- calm state (#8: neutral) -->
+    <section id="calm" class="calm">
+      <div class="calm-icon">✓</div>
+      <div>
+        <h1>All calm</h1>
+        <p id="calm-sub">Maya can double-tap the band whenever they need you.</p>
+        <p class="listening-line hidden" id="calm-listen"></p>
+      </div>
+    </section>
 
-  <!-- history -->
-  <section class="card">
-    <h2>History</h2>
-    <ul id="history" class="history"></ul>
-  </section>
+    <section class="quick" id="quick">
+      <button class="btn soft" id="b-hug">💗 Send Maya a hug</button>
+    </section>
 
-  <section class="demo">
-    <span>Demo:</span>
-    <button id="sim-tap">Simulate double-tap</button>
-    <button id="sim-fall">Simulate fall</button>
-    <button id="sim-cry">Simulate crying</button>
-    <button id="sim-anger">Simulate angry adult</button>
-    <button id="sim-concern">Simulate luring adult</button>
+    <!-- Pixie Card (demo tap-to-pay) -->
+    <section class="wallet" id="wallet">
+      <div class="ask hidden" id="w-ask">
+        <div class="ask-head">🛍 <span id="w-ask-title">Maya wants to buy something</span></div>
+        <p id="w-ask-why"></p>
+        <div class="actions">
+          <button class="btn primary" id="w-approve">Approve</button>
+          <button class="btn secondary" id="w-decline">Not this time</button>
+        </div>
+      </div>
+      <div class="setup hidden" id="w-setup">
+        <div class="setup-icon">💳</div>
+        <div>
+          <b>Give <span class="w-child">Maya</span> a Pixie Card</b>
+          <p>Tap-to-pay pocket money on the band, with a daily budget you set.</p>
+          <button class="btn primary small" id="w-create">Create Pixie Card</button>
+        </div>
+      </div>
+      <div class="pcard hidden" id="w-card">
+        <div class="pcard-top"><span>✦ Pixie Card</span><span class="demo-tag">DEMO</span></div>
+        <div class="pcard-left"><span id="w-left">$10.00</span> left today</div>
+        <div class="pbar"><i id="w-bar"></i></div>
+        <div class="pcard-bottom"><span id="w-name">MAYA</span><span>•••• DEMO</span></div>
+        <div class="paused hidden" id="w-paused">⏸ Paused</div>
+      </div>
+      <ul class="tx" id="w-recent"></ul>
+    </section>
+
+    <!-- history (#9): alerts only; device events live in Settings -->
+    <section class="history">
+      <h2>History</h2>
+      <div id="history"></div>
+    </section>
+  </main>
+
+  <!-- demo controls only with ?demo=1 (#10) -->
+  <section class="demo hidden" id="demo">
+    <span>Demo</span>
+    <button data-sim="double-tap">Double-tap</button>
+    <button data-sim="fall">Fall</button>
+    <button data-sim="crying">Crying</button>
+    <button data-sim="adult_anger">Angry adult</button>
+    <button data-sim="adult_concerning">Luring adult</button>
     <a href="/" target="_blank">Control room ↗</a>
   </section>
 </div>
+
+<!-- settings sheet (#10) -->
+<div class="overlay hidden" id="settings">
+  <div class="panel">
+    <div class="panel-head"><h2>Settings</h2><button class="icon" id="close-settings" aria-label="Close">✕</button></div>
+    <label class="row">
+      <div><b>Listening mode</b><small>Pixie listens for crying, screaming and worrying adult behaviour. The band's light stays blue so people nearby can see it. Short clips are kept only when something is detected.</small></div>
+      <span class="switch"><input type="checkbox" id="s-listen"><i></i></span>
+    </label>
+    <label class="row">
+      <div><b>Fall check</b><small>After a fall the band asks Maya if everything is OK. No answer in 15 s alerts you.</small></div>
+      <span class="switch"><input type="checkbox" id="s-fall"><i></i></span>
+    </label>
+    <div class="row static">
+      <div><b>Guardians</b><small id="s-guardians">Mom (first), Dad (if no answer in 30 s)</small></div>
+    </div>
+    <div class="row static">
+      <div><b>Alert sounds</b><small id="s-sound">Off</small></div>
+      <button class="btn soft small" id="s-sound-btn">Test sound</button>
+    </div>
+    <h3 class="section">Pixie Card (demo)</h3>
+    <div class="row static">
+      <div><b>Daily budget</b><small>Most Maya can spend in a day</small></div>
+      <span class="money">$<input type="number" id="s-daily" min="0" max="500" step="0.5"></span>
+    </div>
+    <div class="row static">
+      <div><b>Per purchase</b><small>Above this, Maya has to ask you</small></div>
+      <span class="money">$<input type="number" id="s-per" min="0" max="500" step="0.5"></span>
+    </div>
+    <div class="row static cats">
+      <div><b>Allowed</b><small>Anything else asks you first</small><div id="s-cats" class="catlist"></div></div>
+    </div>
+    <label class="row">
+      <div><b>Pause card</b><small>Every tap is declined while paused</small></div>
+      <span class="switch"><input type="checkbox" id="s-frozen"><i></i></span>
+    </label>
+    <h3 class="section">Band</h3>
+    <div class="row static">
+      <div><b id="s-band-name">Band</b><small id="s-band-detail">–</small></div>
+      <button class="btn soft small" id="b-find">🔦 Find band</button>
+    </div>
+    <details class="device-log" id="device-log">
+      <summary id="device-log-sum">Device &amp; app events</summary>
+      <ul id="device-events"></ul>
+    </details>
+  </div>
+</div>
+
+<!-- first run: alert sounds must be turned on (#7) -->
+<div class="overlay" id="welcome">
+  <div class="panel center">
+    <div class="big">🔔</div>
+    <h2>Turn on alerts</h2>
+    <p>Pixie plays a sound and vibrates when Maya needs you. Keep this page open while Maya wears the band.</p>
+    <button class="btn primary wide" id="enable-sound">Turn on alerts</button>
+    <button class="link" id="skip-sound">Not now</button>
+  </div>
+</div>
+
 <script src="/static/mom.js"></script>
 </body>
 </html>

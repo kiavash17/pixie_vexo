@@ -24,7 +24,19 @@ over Bluetooth and reads every sensor plus the microphone.
   is logged with a 15 s clip. Audio otherwise stays in a 60 s RAM buffer.
 - **Assessment:** Gemini hears the clip (words and tone) and writes summary, tone, voices,
   suggested action; it can raise urgency, never lower it. Fallback: OpenAI, then rules.
+- **Worrying adult alerts** get their own high-alarm card that shows at once what was detected
+  ("offered puppies to get the child into a van…") and the adult's exact words.
 - **Fall check, hug, find band, event log with outcome labels, offline/low-battery banners.**
+- **Guardian UX:** action-first alert card, one consistent message, plain words, band status in
+  the header, first-run sound prompt, settings sheet (⚙), demo buttons only with `/mom?demo=1`.
+
+### Pixie Card: tap to pay (demo only, no real money)
+
+Mom creates a Pixie Card and sets a daily budget, a per-purchase limit and allowed categories
+(Settings ⚙). At the pretend shop `http://localhost:8765/shop` the child picks a treat and
+**taps the band once** (the band has no NFC; its tap gesture stands in for the reader). Within the
+rules it's paid (band flashes green); over a limit or in a blocked category Mom gets
+**Approve / Not this time** on the mom view and the shop waits for her answer.
 
 Keys in `.env` (never committed): `DEEPGRAM_API_KEY`, `GEMINI_API_KEY`
 (optional fallback `GEMINI_WORKSHOP_API_KEY`).

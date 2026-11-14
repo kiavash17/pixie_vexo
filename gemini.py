@@ -108,13 +108,14 @@ LISTEN_SCHEMA = {
         "child_distress": {"type": "NUMBER"},
         "adult_concerning": {"type": "NUMBER"},
         "concern": {"type": "STRING"},
+        "concern_quote": {"type": "STRING"},
         "children": {"type": "INTEGER"},
         "adults": {"type": "INTEGER"},
         "transcript": {"type": "STRING"},
         "evidence": {"type": "STRING"},
     },
     "required": ["crying", "screaming", "adult_anger", "child_distress", "adult_concerning", "concern",
-                 "children", "adults", "transcript", "evidence"],
+                 "concern_quote", "children", "adults", "transcript", "evidence"],
 }
 LISTEN_PROMPT = (
     "This is the newest 5 seconds of audio from a microphone on a young child's wristband (the child is the "
@@ -129,7 +130,9 @@ LISTEN_PROMPT = (
     "talk about the child's body, or pressuring the child after a no. Ordinary adult care (a parent, teacher "
     "or coach giving normal instructions, offering help to a lost child in the open) is NOT concerning. "
     "Describe the pattern in `concern` in a few plain words a parent understands, e.g. 'offered puppies to "
-    "get the child into a van, asked them to keep it secret' (empty if none). Judge the new audio together with the recent "
+    "get the child into a van, asked them to keep it secret' (empty if none). In `concern_quote` put the "
+    "adult's exact worrying words, word for word, from the new audio (empty if none). Judge the new audio "
+    "together with the recent "
     "conversation below, since these patterns build over time.\n"
     "Count the distinct child and adult voices you hear (0 if none). Background crowd noise, laughter and "
     "normal conversation are not distress. Give a short transcript of clear words in the new audio (empty "
