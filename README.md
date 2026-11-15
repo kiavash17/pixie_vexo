@@ -51,6 +51,15 @@ over Bluetooth and reads every sensor plus the microphone.
 - **Guardian UX:** action-first alert card, one consistent message, plain words, band status in
   the header, first-run sound prompt, settings sheet (⚙), demo buttons only with `/mom?demo=1`.
 
+### Live demo on stage (`/stage`)
+
+`python server.py`, then open `http://localhost:8765/stage` full-screen (F11) on the laptop: Mom's
+phone in the middle (live from the band), the feature title on the left, and a presenter panel on
+the right. Real band: double-tap twice for help, pick a treat and tap the band to pay, Listening on
+for crying / anger / "Mommy!", hug and find-band. Keys `1`–`0` play the ten scenes (worrying adult,
+calling, crying, angry adult, fall, teacher to-do, quiet nudge, Pixie Card, Maya's day, patterns),
+`H` help, `L` listening, `Esc` back to calm.
+
 ### Pixie Card: tap to pay (demo only, no real money)
 
 Mom creates a Pixie Card and sets a daily budget, a per-purchase limit and allowed categories

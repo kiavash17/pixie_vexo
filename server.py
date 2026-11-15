@@ -460,6 +460,7 @@ def main():
     app.router.add_get("/", lambda r: web.FileResponse(ROOT / "static" / "index.html"))
     app.router.add_get("/mom", lambda r: web.FileResponse(ROOT / "static" / "mom.html"))
     app.router.add_get("/shop", lambda r: web.FileResponse(ROOT / "static" / "shop.html"))
+    app.router.add_get("/stage", lambda r: web.FileResponse(ROOT / "static" / "stage.html"))
     app.router.add_get("/api/transcript", transcript_handler)
     REC_DIR.mkdir(exist_ok=True)
     app.router.add_static("/recordings/", REC_DIR)
