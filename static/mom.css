@@ -317,6 +317,9 @@ main { padding: 14px; display: grid; gap: 14px; }
 .cap-lines .spk.pending { background: transparent; color: rgba(255,255,255,.45); font-weight: 600; font-style: italic; }
 .tr-line.other { color: var(--dim); }
 
+.reconnect { display: flex; gap: 10px; align-items: center; padding: 10px 16px; background: #fdecec; color: var(--red); font-weight: 600; font-size: 14px; }
+.reconnect span { flex: 1; } .reconnect .btn { background: var(--red); color: #fff; }
+
 /* ---------- who's around ---------- */
 .nearby { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; display: grid; gap: 6px; text-align: left; }
 .nearby-l { font-size: 12px; font-weight: 800; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }

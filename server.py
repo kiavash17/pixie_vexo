@@ -229,17 +229,34 @@ class Hub:
             print("[status]", changes.get("state", ""), changes["message"])
 
     # ---------------------------------------------------------------- band
-    async def connect(self):
+    async def keep_connected(self):
+        """Keep looking for OUR band (Vexo-HACK-NN only) whenever it is not connected, so a
+        double-tap is all it takes: no server restart, no Connect button."""
+        while True:
+            if self.status["state"] in ("idle", "error"):
+                await self.connect(quiet=True)
+            await asyncio.sleep(3)
+
+    async def connect(self, quiet=False):
         if self.status["state"] in ("connecting", "connected", "reconnecting"):
             return
-        self.set_status(state="connecting", message="Looking for Vexo-HACK-%02d (double-tap it)..." % BAND)
+        if quiet:                                  # background retry: don't repeat the same lines in the terminal
+            self.status["state"] = "connecting"
+            self.push(self.status)
+        else:
+            self.set_status(state="connecting", message="Looking for Vexo-HACK-%02d (double-tap it)..." % BAND)
         extra = {}
         if self.transport == "sim":                # pretend band speaks the kit's sample recording
             extra["audio_packets"] = ogg_packets(self.sim_audio or str(KIT / "dashboard" / "speech" / "sample-speech.opus"))
         try:
             band = await Band.connect(BAND, self.transport, auto_reconnect=True, **extra)
         except VexoError as e:
-            self.set_status(state="error", message=str(e))
+            msg = "%s (Pixie keeps trying: just double-tap the band)" % e
+            if quiet and msg == self.status.get("message"):
+                self.status["state"] = "error"
+                self.push(self.status)
+            else:
+                self.set_status(state="error", message=msg)
             return
         self.band = band
         for name in DATA_EVENTS:
@@ -390,7 +407,7 @@ async def on_startup(app):
     hub.loop = asyncio.get_running_loop()
     print("Loading the sound decoder...")
     PcmDecoder()                                   # load av once, before the band streams
-    asyncio.ensure_future(hub.connect())
+    asyncio.ensure_future(hub.keep_connected())    # first try now, then again whenever the band is not connected
     asyncio.ensure_future(hub.monitor())
     asyncio.ensure_future(hub.pixie.listen_loop())
     asyncio.ensure_future(hub.pixie.actions_loop())

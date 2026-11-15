@@ -104,6 +104,9 @@ function render() {
   $('banner').textContent = notice ? `⚠ ${notice}` : '';
   $('banner').className = `banner ${notice && !/offline|connection/i.test(notice) ? 'warn' : ''} ${notice ? '' : 'hidden'}`;
   $('sound-off').classList.toggle('hidden', !!audioCtx || !$('welcome').classList.contains('hidden'));
+  $('reconnect').classList.toggle('hidden', b.connected || b.state === 'reconnecting');
+  $('b-reconnect').textContent = b.state === 'connecting' ? 'Looking…' : 'Try now';
+  $('b-reconnect').disabled = b.state === 'connecting';
 
   // alert vs calm
   $('alert').classList.toggle('hidden', !a);
@@ -392,6 +395,7 @@ $('nudge-ok').onclick = () => send({ cmd: 'nudge_dismiss' });
 $('s-quiet').onchange = (e) => send({ cmd: 'quiet_check', minutes: Number(e.target.value) });
 $('s-gesture').onchange = (e) => send({ cmd: 'gesture', value: e.target.value });
 $('s-enroll').onclick = () => send({ cmd: 'enroll_voice' });
+$('b-reconnect').onclick = () => send({ cmd: 'connect' });
 
 // ------------------------------------------------------------------ the day as a picture
 let dayWhich = null;
