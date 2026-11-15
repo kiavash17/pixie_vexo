@@ -385,8 +385,9 @@ class Pixie:
     def on_text(self, text, final):                          # live transcript during the note
         if final and (text or "").strip() and not voiceid.available():
             self.transcripts.add(text.strip())               # full-day transcript (Scribe writes it, tagged, when on)
-        if final and self.listening and not self.active and CALL_RE.search(text or ""):
-            self.on_voice_call(text, "heard")                # fast path: Deepgram words
+        who = self.fast_tag(text) if final and voiceid.available() else None
+        if final and self.listening and not self.active and CALL_RE.search(text or "") and who != "other":
+            self.on_voice_call(text, "heard")                # fast path: Deepgram words (child's voice only)
             return
         a = self.active
         if a and a["state"] in ("listening", "coming", "waiting") and self.hub.status["mic"]:
@@ -640,6 +641,21 @@ class Pixie:
                 print("  [voice] %s" % e)
                 continue
             self.on_voices(r, end - voiceid.VOICE_WINDOW)
+
+    def fast_tag(self, text):
+        """Instant speaker tag for a caption line that just ended (loudness vs. the enrolled level)."""
+        words = len((text or "").split())
+        if not words:
+            return None
+        dur = max(1.2, min(6.0, words * 0.35))               # roughly how long the line took to say
+        now = time.time()
+        who, level = voiceid.fast_tag(self.hub.clip_pcm(dur + 0.5, now), self.child_db)
+        if who:
+            self.hub.push({"type": "voices", "fast": True, "segments": [
+                {"t": now - dur, "end": now, "text": text, "who": who, "db": level}]})
+            if who == "child":
+                self.voice["child_t"] = now
+        return who
 
     def on_voices(self, r, t0):
         segs = r["segments"]

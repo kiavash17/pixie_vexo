@@ -114,6 +114,29 @@ def identify(ogg_bytes, pcm_samples, child_db=None):
             "child_speakers": sorted(child)}
 
 
+FAST_MARGIN_DB = 5.0                   # instant tag: within this many dB of the child's enrolled level
+
+
+def voiced_db(pcm_samples, rate=16000):
+    """Loudness of the speech in a stretch of audio: the 75th-percentile 20 ms frame (pauses ignored)."""
+    step = rate // 50
+    frames = [_db(pcm_samples[i:i + step]) for i in range(0, len(pcm_samples) - step + 1, step)]
+    if not frames:
+        return None
+    frames.sort()
+    return frames[int(len(frames) * 0.75)]
+
+
+def fast_tag(pcm_samples, child_db=None):
+    """Instant guess for a line that just ended: is it as loud as the child's own voice on the band?
+    No network: ~1 s after the words instead of ~15 s. Scribe confirms or corrects it later."""
+    level = voiced_db(pcm_samples)
+    if level is None:
+        return None, None
+    ref = child_db if child_db is not None else DEFAULT_CHILD_DB
+    return ("child" if level >= ref - FAST_MARGIN_DB else "other"), round(level, 1)
+
+
 def child_level(ogg_bytes, pcm_samples):
     """Enrollment: the child's typical loudness on this band, from a clip of only the child talking."""
     r = identify(ogg_bytes, pcm_samples, child_db=-96.0)

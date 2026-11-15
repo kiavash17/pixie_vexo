@@ -229,15 +229,16 @@ function onVoices(m) {
     if (!sw.size) continue;
     let best = null, bestScore = 0;
     for (const l of capLines) {
-      if (l.who || l.t < seg.t - 8 || l.t > seg.end + 20) continue;
+      // instant (loudness) tags fill empty lines; Scribe's tags may correct instant ones, never the reverse
+      if (l.src === 'scribe' || (m.fast && l.who) || l.t < seg.t - 8 || l.t > seg.end + 20) continue;
       const lw = wordsOf(l.text);
       const shared = [...lw].filter((w) => sw.has(w)).length;
       const score = lw.size ? shared / lw.size : 0;
       if (score > bestScore) { bestScore = score; best = l; }
     }
-    if (best && bestScore >= 0.4) best.who = seg.who;
-    else if (S && S.captions) {                     // Deepgram (English) missed it, e.g. Farsi: show Scribe's line
-      capLines.push({ t: seg.t, text: seg.text, who: seg.who, late: true });
+    if (best && bestScore >= 0.4) { best.who = seg.who; best.src = m.fast ? 'fast' : 'scribe'; }
+    else if (!m.fast && S && S.captions) {          // Deepgram (English) missed it, e.g. Farsi: show Scribe's line
+      capLines.push({ t: seg.t, text: seg.text, who: seg.who, src: 'scribe', late: true });
     }
   }
   capLines.sort((a, b) => a.t - b.t);
