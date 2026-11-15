@@ -66,7 +66,8 @@ Keys in `.env` (never committed): `DEEPGRAM_API_KEY`, `GEMINI_API_KEY`
 
 ```
 npm install          # once (Playwright; uses the installed Edge, plus `npx playwright install ffmpeg` once)
-npm run demo         # -> demo/out/pixie-demo.mp4 (390x844 phone, 3x, ~40 s)
+npm run demo           # -> demo/out/pixie-demo.mp4 (1920x1080: phone centered, step titles beside it)
+npm run demo:portrait  # -> demo/out/pixie-demo-portrait.mp4 (phone only, 780x1688)
 ```
 
 It starts its own server on the pretend band (port 8777, fresh demo data), plays a child's line

@@ -86,8 +86,6 @@ h1, h2, .brand, .child, b, .btn, button { font-family: inherit; }
 
 /* Pixie Card: a bold flat block instead of a gradient */
 .pcard { background: #cc3f22; border-radius: 26px; box-shadow: 0 6px 0 #962b14; }
-.pcard::after { content: ""; position: absolute; right: -30px; bottom: -40px; width: 140px; height: 120px; border-radius: 55% 45% 50% 50% / 50% 55% 45% 50%; background: rgba(255, 200, 61, .55); }
-.pcard > * { position: relative; z-index: 1; }
 
 /* nudge, to-dos, nearby */
 .nudge { background: #dcebfb; border: 2px solid #9cc4f2; border-radius: 26px; box-shadow: var(--block); }

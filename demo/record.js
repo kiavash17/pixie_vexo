@@ -69,7 +69,14 @@ async function waitFor(check, what, timeout = 60000) {
 }
 
 // ------------------------------------------------------------------ on-screen narration
+// landscape (default): captions are drawn beside the phone in the 1920x1080 video, not on the app;
+// portrait (--portrait): captions float at the bottom of the phone screen.
+const PORTRAIT = process.argv.includes('--portrait');
+const captions = [];                                  // {t: seconds since the video started, text}
+let videoStart = 0;
 async function caption(page, text) {
+  captions.push({ t: (Date.now() - videoStart) / 1000, text });
+  if (!PORTRAIT) { await sleep(300); return; }
   await page.evaluate((t) => {
     let c = document.getElementById('demo-caption');
     if (!c) {
@@ -129,13 +136,15 @@ async function main() {
     browser = await chromium.launch({ channel: process.env.DEMO_BROWSER || 'msedge' });
     const context = await browser.newContext({
       viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true,
-      recordVideo: { dir: RAW, size: { width: 780, height: 1688 } },
+      // exactly the viewport: Playwright only scales the page DOWN to fit, so a bigger size left the
+      // app in the top-left corner of a grey canvas. to_mp4.py scales it up when composing.
+      recordVideo: { dir: RAW, size: { width: 390, height: 844 } },
     });
     const page = await context.newPage();
     const pageLog = fs.createWriteStream(path.join(OUT, 'page.log'));
     page.on('console', (m) => pageLog.write(`[${m.type()}] ${m.text()}\n`));
     page.on('pageerror', (e) => pageLog.write(`[pageerror] ${e.message}\n`));
-    const videoStart = Date.now();                     // the video starts with the page: trim the blank load
+    videoStart = Date.now();                           // the video starts with the page: trim the blank load
     page.on('websocket', (s) => {
       pageLog.write(`[ws] open ${s.url()}\n`);
       s.on('framesent', (f) => pageLog.write(`[ws] sent ${String(f.payload).slice(0, 80)}\n`));
@@ -143,15 +152,9 @@ async function main() {
       s.on('socketerror', (e) => pageLog.write(`[ws] error ${e}\n`));
     });
     await page.goto(`${BASE}/mom`);
-    await page.waitForSelector('#enable-sound');
+    await page.waitForFunction(() => document.getElementById('bandtext').textContent.startsWith('Band on'));
     await sleep(500);
     const trim = (Date.now() - videoStart) / 1000;
-    await sleep(PAUSE);
-
-    // 0. first run: the parent turns on alerts
-    await caption(page, 'Mom opens Pixie and turns on alerts');
-    await sleep(PAUSE);
-    await tap(page, '#enable-sound');
     await sleep(PAUSE);
 
     // 1. calm
@@ -199,9 +202,13 @@ async function main() {
     const webm = await video.path();
     band.close();
 
-    const mp4 = path.join(OUT, 'pixie-demo.mp4');
-    log('converting to MP4…');
-    const conv = spawnSync(PYTHON, [path.join(__dirname, 'to_mp4.py'), webm, mp4, String(trim)], { stdio: 'inherit' });
+    const mp4 = path.join(OUT, PORTRAIT ? 'pixie-demo-portrait.mp4' : 'pixie-demo.mp4');
+    const capFile = path.join(OUT, 'captions.json');
+    fs.writeFileSync(capFile, JSON.stringify(captions, null, 1));
+    log(PORTRAIT ? 'converting to MP4 (portrait)…' : 'composing the 1920x1080 video…');
+    const args = [path.join(__dirname, 'to_mp4.py'), webm, mp4, String(trim)];
+    if (!PORTRAIT) args.push('--landscape', capFile);
+    const conv = spawnSync(PYTHON, args, { stdio: 'inherit' });
     if (conv.status !== 0) throw new Error('MP4 conversion failed (the WebM is in demo/out/raw/)');
     log(`done: ${path.relative(ROOT, mp4)}`);
   } finally {

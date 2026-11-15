@@ -6,7 +6,6 @@ const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 const PARAMS = new URLSearchParams(location.search);
 const DEMO = PARAMS.has('demo');
-if (PARAMS.get('welcome') === '0') document.getElementById('welcome').classList.add('hidden');
 let S = null;                                   // latest snapshot
 let ws = null;
 const send = (o) => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
@@ -54,20 +53,20 @@ function outcomeWords(e, value) {
 const SIGNAL_WORDS = { crying: '😢 Crying', screaming: '😱 Screaming', adult_anger: '😠 Angry adult', adult_concerning: '⚠ Worrying adult' };
 
 // ------------------------------------------------------------------ sound (#7)
+// Sound is ON by default, with no prompt. Browsers only let a page play sound after the person has
+// interacted with it once, so the first tap / click / key anywhere quietly unlocks it.
 let audioCtx = null, lastChime = 0;
-function enableSound() {
-  audioCtx = audioCtx || new AudioContext();
-  audioCtx.resume();
-  $('welcome').classList.add('hidden');
-  chime(1);
-  render();
+try { audioCtx = new AudioContext(); audioCtx.resume().catch(() => {}); } catch (e) { audioCtx = null; }
+const soundReady = () => !!audioCtx && audioCtx.state === 'running';
+function unlockSound() {
+  if (!audioCtx) { try { audioCtx = new AudioContext(); } catch (e) { return; } }
+  if (audioCtx.state !== 'running') audioCtx.resume().then(() => S && render()).catch(() => {});
 }
-$('enable-sound').onclick = enableSound;
-$('sound-off').onclick = enableSound;
-$('s-sound-btn').onclick = () => { if (!audioCtx) enableSound(); else chime(2); };
-$('skip-sound').onclick = () => { $('welcome').classList.add('hidden'); render(); };
+for (const ev of ['pointerdown', 'touchstart', 'keydown']) document.addEventListener(ev, unlockSound, { passive: true });
+$('s-sound-btn').onclick = () => { unlockSound(); setTimeout(() => chime(2), 50); };
 function chime(urgency) {
   if (!audioCtx) return;
+  if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
   const notes = urgency >= 2 ? [880, 660, 880, 660] : [660, 880];
   notes.forEach((f, i) => {
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
@@ -103,7 +102,6 @@ function render() {
   const notice = S.notice || (!b.connected && b.state !== 'connecting' ? `${child}'s band is offline: alerts can't reach you` : '');
   $('banner').textContent = notice ? `⚠ ${notice}` : '';
   $('banner').className = `banner ${notice && !/offline|connection/i.test(notice) ? 'warn' : ''} ${notice ? '' : 'hidden'}`;
-  $('sound-off').classList.toggle('hidden', !!audioCtx || !$('welcome').classList.contains('hidden'));
   $('reconnect').classList.toggle('hidden', b.connected || b.state === 'reconnecting');
   $('b-reconnect').textContent = b.state === 'connecting' ? 'Looking…' : 'Try now';
   $('b-reconnect').disabled = b.state === 'connecting';
@@ -830,7 +828,7 @@ function renderSettings() {
   $('s-fall').checked = S.fall_check;
   const [g1, g2] = S.guardians;
   $('s-guardians').textContent = `${g1.name} first, then ${g2.name} if no one answers in ${S.ack_timeout} s`;
-  $('s-sound').textContent = audioCtx ? 'On (sound and vibration)' : 'Off: tap Test sound to turn on';
+  $('s-sound').textContent = soundReady() ? 'On (sound and vibration)' : 'On: the browser plays them after your first tap on this page';
   const b = S.band;
   $('s-band-name').textContent = b.name || 'Band';
   const bits = [b.connected ? 'Connected' : 'Offline'];
