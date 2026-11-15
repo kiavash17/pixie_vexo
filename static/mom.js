@@ -213,7 +213,8 @@ function drawCaptions() {
   const child = S ? S.child : 'Maya';
   const tagging = S && S.voice && S.voice.on;
   $('cap-lines').replaceChildren(...capLines.map((l) => {
-    const p = el('p'); p.append(el('time', '', clockTime(l.t)));
+    const p = el('p'); p.dir = 'auto';                // right-to-left scripts (Farsi, Arabic) read correctly
+    p.append(el('time', '', clockTime(l.t)));
     if (l.who) p.append(el('span', `spk ${l.who}`, l.who === 'child' ? child : 'someone else'));
     else if (tagging && Date.now() / 1000 - l.t < 40) p.append(el('span', 'spk pending', 'identifying…'));
     p.append(document.createTextNode(l.text));
@@ -235,8 +236,14 @@ function onVoices(m) {
       if (score > bestScore) { bestScore = score; best = l; }
     }
     if (best && bestScore >= 0.4) best.who = seg.who;
+    else if (S && S.captions) {                     // Deepgram (English) missed it, e.g. Farsi: show Scribe's line
+      capLines.push({ t: seg.t, text: seg.text, who: seg.who, late: true });
+    }
   }
+  capLines.sort((a, b) => a.t - b.t);
+  while (capLines.length > 10) capLines.shift();
   drawCaptions();
+  $('cap-lines').scrollTop = $('cap-lines').scrollHeight;
 }
 function renderCaptions() {
   $('captions').classList.toggle('hidden', !S.captions);
@@ -290,7 +297,7 @@ function renderTranscript() {
   for (const l of lines) {
     const h = new Date(l.t * 1000).getHours();
     if (h !== hour) { hour = h; nodes.push(el('div', 'day', `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`)); }
-    const p = el('p', `tr-line ${l.who || ''}`); p.append(el('time', '', clockTime(l.t)));
+    const p = el('p', `tr-line ${l.who || ''}`); p.dir = 'auto'; p.append(el('time', '', clockTime(l.t)));
     if (l.who) p.append(el('span', `spk ${l.who}`, l.who === 'child' ? (S ? S.child : 'Maya') : 'someone else'));
     p.append(document.createTextNode(l.text));
     nodes.push(p);
