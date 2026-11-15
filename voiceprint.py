@@ -13,8 +13,9 @@ import numpy as np
 RATE = 16000
 FRAME, HOP = 400, 160                   # 25 ms windows, 10 ms hop
 N_MELS = 26
-SIM_MIN = 0.955                         # timbre similarity needed: own voice 0.98-1.00, others <= 0.92 in tests
-PITCH_MAX_ST = 6.0                      # pitch difference allowed, in semitones (short clips are noisy)
+# Tuned on real recordings (Nov 14): own voice 0.97-1.00; other voices' windows mostly <= 0.94, a few up to 0.974.
+SIM_MIN = 0.965                         # timbre similarity needed to call it the child
+PITCH_MAX_ST = 8.0                      # pitch only rules out big gaps (child vs adult ~10+ st); own voice varies up to ~7
 MIN_VOICED = 25                         # voiced frames needed (~0.25 s of speech) to judge at all
 
 
