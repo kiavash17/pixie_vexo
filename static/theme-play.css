@@ -1,0 +1,103 @@
+/* Pixie "play" theme: warm, flat, toy-like (original styling, loaded after mom.css).
+   Sunflower surround, cream paper surface, bold rounded type, flat colour blocks with a solid
+   "wooden block" edge instead of soft shadows, pill buttons, a few organic blobs. */
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap");
+
+:root {
+  --sun: #ffc83d; --sun-deep: #f5ae12; --cream: #fff8ec; --paper: #fffdf7;
+  --ink: #2b2240; --dim: #6f6580; --line: #efe3cc;
+  --tomato: #f0583a; --sky: #3b8ede; --leaf: #2fa866; --plum: #8a4fd3; --peach: #ffb98a; --mint: #bfe8d2;
+  --brand: var(--tomato);
+  --amber-bg: #ffd66b; --amber-ink: #3b2600; --amber-edge: #e6a316;
+  --red: #d8432a; --green: #23905a; --purple: #7b3fbf;
+  --block: 0 4px 0 rgba(43, 34, 64, .14);
+}
+body { background: var(--sun); font-family: "Nunito", ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif; color: var(--ink); }
+.phone { background: var(--cream); box-shadow: 0 0 0 10px rgba(255, 255, 255, .25); }
+h1, h2, .brand, .child, b, .btn, button { font-family: inherit; }
+
+/* header: cream, wordmark in ink */
+.appbar { background: var(--cream); color: var(--ink); border-bottom: 2px dashed var(--line); }
+.brand { color: var(--ink); font-weight: 900; font-size: 22px; letter-spacing: -.01em; }
+.brand::first-letter { color: var(--tomato); }
+.bandline { color: var(--dim); }
+.bandline.ok .sdot { background: var(--leaf); } .bandline.bad .sdot { background: var(--tomato); }
+.avatar { background: var(--sun); color: var(--ink); box-shadow: var(--block); }
+.icon { background: #fff; color: var(--ink); box-shadow: var(--block); border-radius: 14px; }
+
+/* cards: flat paper blocks with a solid bottom edge */
+.hero, .daycard, .nearby, .calm, .item, .history .item, .wstats > div, .tx li, .todos li, .panel, .sheet {
+  background: var(--paper); border: 2px solid var(--line); box-shadow: var(--block);
+}
+.hero, .daycard, .nearby { border-radius: 28px; }
+.item, .tx li, .wstats > div { border-radius: 20px; }
+
+/* hero: organic blobs behind the avatar */
+.hero { position: relative; overflow: hidden; }
+.hero::before, .hero::after { content: ""; position: absolute; z-index: 0; pointer-events: none; }
+.hero::before { width: 190px; height: 160px; left: -50px; top: -40px; background: var(--peach); border-radius: 58% 42% 55% 45% / 52% 60% 40% 48%; opacity: .55; }
+.hero::after { width: 170px; height: 150px; right: -50px; top: 30px; background: var(--mint); border-radius: 45% 55% 40% 60% / 55% 45% 60% 40%; opacity: .7; }
+.hero > * { position: relative; z-index: 1; }
+.ring { background: conic-gradient(var(--leaf) 0 100%); }
+.ring.listening { background: conic-gradient(var(--leaf), var(--sky), var(--sun), var(--leaf)); }
+.face { background: var(--sun); color: var(--ink); }
+.okbadge { background: var(--leaf); }
+.hero h1 { font-weight: 900; font-size: 28px; }
+
+/* status tiles: each a different toy block colour */
+.tile { border-radius: 20px !important; box-shadow: var(--block); border: 0; }
+.tiles .tile:nth-child(1) { background: #dff4e7; }
+.tiles .tile:nth-child(2) { background: #dcebfb; }
+.tiles .tile:nth-child(3) { background: #fff0c7; }
+.tiles .tile:nth-child(4) { background: #ffe1d8; }
+.tiles .tile:nth-child(5) { background: #ece0fb; }
+.tile label { color: var(--ink); opacity: .75; font-weight: 800; }
+.gauge { background: radial-gradient(closest-side, rgba(255,255,255,.85) 72%, transparent 73%), conic-gradient(var(--c) calc(var(--p) * 1%), rgba(43,34,64,.12) 0); }
+.bars i { background: rgba(43,34,64,.15); } .bars i.on { background: var(--sky); }
+.listen-tile.on { background: #cfe3ff !important; border: 0; box-shadow: 0 4px 0 #3b8ede; }
+
+/* buttons: chunky pills that press down */
+.btn, button.btn { border-radius: 999px; font-weight: 900; box-shadow: var(--block); transition: transform .08s, box-shadow .08s; }
+.btn:active, .tile:active, .mini:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(43,34,64,.14); }
+.btn.primary { background: var(--ink); color: #fff; }
+.btn.soft { background: #fff; border: 2px solid var(--line); }
+.btn.secondary { box-shadow: none; }
+.quick .btn { border-radius: 22px; }
+.mini { border-radius: 999px; background: #fff; border: 2px solid var(--line); font-weight: 700; }
+.daybtns .btn, .daytabs button { border-radius: 999px; }
+
+/* alerts: flat warm colours per kind, big rounded corners */
+.alert { border-radius: 30px; border-width: 3px; box-shadow: 0 6px 0 rgba(43, 34, 64, .18); }
+.alert.k-help { background: var(--amber-bg); border-color: var(--amber-edge); }
+/* white text needs >= 4.5:1, so the flat colours are a shade deeper on alert cards */
+.alert.k-voice { background: #0f7a70; border-color: #0a5750; }
+.alert.k-cry { background: #4f63c7; border-color: #2f3f8f; }
+.alert.k-anger { background: #c2481c; border-color: #8e3010; }
+.alert.k-fall { background: var(--purple); border-color: #55278a; }
+.alert.coming { background: #1a7a47; border-color: #125a34; }
+.alert h1 { font-weight: 900; }
+.state-chip { border-radius: 999px; font-weight: 900; }
+.alert .btn.primary { box-shadow: 0 4px 0 rgba(0,0,0,.2); }
+.a-icon { box-shadow: 0 3px 0 rgba(0,0,0,.12); }
+
+/* section headings */
+.sec-head h2, .history > h2, .day, .section { font-weight: 900; color: var(--ink); }
+.sec-head h2 { font-size: 20px; }
+
+/* Pixie Card: a bold flat block instead of a gradient */
+.pcard { background: #cc3f22; border-radius: 26px; box-shadow: 0 6px 0 #962b14; }
+.pcard::after { content: ""; position: absolute; right: -30px; bottom: -40px; width: 140px; height: 120px; border-radius: 55% 45% 50% 50% / 50% 55% 45% 50%; background: rgba(255, 200, 61, .55); }
+.pcard > * { position: relative; z-index: 1; }
+
+/* nudge, to-dos, nearby */
+.nudge { background: #dcebfb; border: 2px solid #9cc4f2; border-radius: 26px; box-shadow: var(--block); }
+.todos { background: #fff4cf; border: 2px solid #f2d27a; border-radius: 26px; box-shadow: var(--block); }
+.me-face { background: var(--sun); border-color: var(--leaf); }
+.captions, .livebar { border-radius: 26px; box-shadow: 0 5px 0 rgba(0,0,0,.25); }
+
+/* banners and overlays */
+.banner.warn { background: #fff0c7; }
+.panel { background: var(--cream); border-radius: 30px 30px 0 0; }
+.panel.center { border-radius: 30px; }
+.overlay { background: rgba(43, 34, 64, .45); }
+.switch input:checked + i { background: var(--leaf); }
