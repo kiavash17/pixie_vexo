@@ -76,7 +76,7 @@
       <div class="row"><span class="hint"><b>Ask for help:</b> double-tap the band, then double-tap again</span>
         <button data-k="h" id="sim-help">Do it for me</button></div>
       <div class="row"><span class="hint"><b>Pay with a tap:</b> pick a treat, then tap the band once</span>
-        <button data-arm="candy">🍫 $1.50</button><button data-arm="car">🚗 $8 (asks Mom)</button></div>
+        <button data-arm="candy">🍫 $1.50</button><button data-arm="car">🚗 $8 (asks Mom)</button><button id="tap-for-her">👆 Tap for her</button></div>
       <div class="row"><span class="hint"><b>Listening:</b> the mic hears crying, anger, “Mommy!”</span>
         <button class="toggle" id="listen">Listening</button><button id="captions">📝 Captions</button></div>
       <div class="row"><span class="hint"><b>Mom → Maya:</b> the band glows pink or blinks</span>
@@ -179,6 +179,11 @@ function arm(item, simulateTap) {
 $('sim-help').onclick = async () => { await calm(); send({ cmd: 'simulate', what: 'double-tap' });   // one simulated "double-tap twice"
   show('The help button', 'Double-tap twice = “I need you”', 'Mom is alerted at once, and the band shows when she’s coming.'); };
 document.querySelectorAll('[data-arm]').forEach((b) => { b.onclick = () => arm(b.dataset.arm, false); });
+$('tap-for-her').onclick = () => {
+  const p = S && S.wallet && S.wallet.pending;
+  if (!p || p.state !== 'waiting_tap') { toast('Pick a treat first'); return; }
+  send({ cmd: 'wallet', action: 'tap' });
+};
 $('listen').onclick = () => send({ cmd: 'listen', on: !(S && S.listen && S.listen.on) });
 $('captions').onclick = () => { click('#b-captions'); show('Live', 'Live captions', 'Mom can read what’s being said around Maya, as it’s said.'); };
 $('hug').onclick = () => { send({ cmd: 'hug' }); toast('💗 Hug sent: the band glows pink'); };
@@ -204,6 +209,13 @@ function render() {
   pills.push(pill(L.on ? '👂 Listening on' : '👂 Listening off', L.on ? 'on' : 'off'));
   if (b.mic) pills.push(pill('🎙 Mic open', 'on'));
   if (S.active) pills.push(pill(`🚨 ${S.active.state}`, 'warn'));
+  const p = S.wallet && S.wallet.pending;                  // the till: waiting for a tap, asking Mom, paid
+  if (p && p.state === 'waiting_tap') {
+    const left = Math.max(0, Math.round(p.expires - Date.now() / 1000));
+    pills.push(pill(`💳 ${p.item.name}: tap the band now (${left} s)`, 'warn'));
+  } else if (p && p.state === 'asking') pills.push(pill(`💳 ${p.item.name}: asking Mom`, 'warn'));
+  else if (p && p.state === 'approved') pills.push(pill(`✅ ${p.item.name}: paid`, 'on'));
+  else if (p && (p.state === 'declined' || p.state === 'expired')) pills.push(pill(`💳 ${p.item.name}: ${p.state === 'expired' ? 'no tap, try again' : 'declined'}`, 'off'));
   $('status').replaceChildren(...pills);
   $('listen').classList.toggle('on', !!L.on);
   $('listen').textContent = L.on ? '👂 Listening: on' : '👂 Listening: off';
@@ -216,6 +228,7 @@ function connect() {
   ws.onclose = () => setTimeout(connect, 1500);
 }
 connect();
+setInterval(() => { if (S) render(); }, 1000);            // keeps the tap countdown ticking
 
 // scale the 390x844 phone to the window height
 function fit() {

@@ -235,8 +235,25 @@ class Hub:
     async def keep_connected(self):
         """Keep looking for OUR band (Vexo-HACK-NN only) whenever it is not connected, so a
         double-tap is all it takes: no server restart, no Connect button."""
+        stuck_since = None
         while True:
-            if self.status["state"] in ("idle", "error"):
+            state = self.status["state"]
+            # the library's own reconnect sometimes never finishes: after 20 s, drop it and connect afresh
+            stuck_since = (stuck_since or time.time()) if state == "reconnecting" else None
+            if stuck_since and time.time() - stuck_since > 20:
+                stuck_since = None
+                band, self.band = self.band, None
+                print("[status] reconnect stuck for 20 s: starting a fresh connection")
+                self.stop_audio_outputs()
+                self.set_status(state="error", mic=False, message="Link lost, connecting again...")
+                self.pixie.on_connection(False)
+                if band:
+                    try:
+                        await asyncio.wait_for(band.disconnect(), 5)
+                    except Exception:
+                        pass
+                state = "error"
+            if state in ("idle", "error"):
                 await self.connect(quiet=True)
             await asyncio.sleep(3)
 
