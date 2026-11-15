@@ -115,8 +115,19 @@ class Pixie:
         self.voice_file = data_dir / "voice.json"           # Maya's enrolled loudness on this band
         saved = json.loads(self.voice_file.read_text()) if self.voice_file.exists() else {}
         self.child_db = saved.get("child_db")
+        self.child_profile = saved.get("profile")             # voiceprint: pitch + timbre of the child
+        clip = self.rec_dir / ("enroll-%s.ogg" % CHILD.lower())
+        if not self.child_profile and clip.exists():          # older enrollment: build the voiceprint from its clip
+            try:
+                import voiceprint
+                self.child_profile = voiceprint.compute(voiceprint.load_file(clip))
+                if self.child_profile:
+                    saved["profile"] = self.child_profile
+                    self.voice_file.write_text(json.dumps(saved))
+            except Exception as e:
+                print("  [voice] could not read the enrollment clip: %s" % e)
         self.voice = {"on": voiceid.available(), "method": None, "speakers": 0, "t": None,
-                      "child_t": None, "enrolled": self.child_db is not None, "enrolling": False, "error": None}
+                      "child_t": None, "enrolled": self.child_profile is not None, "enrolling": False, "error": None}
         self.actions_seen_t = time.time()  # transcript lines after this are checked for parent to-dos
 
     # ================================================================ snapshot for the page
@@ -635,7 +646,7 @@ class Pixie:
             if not ogg:
                 continue
             try:
-                r = await loop.run_in_executor(None, voiceid.identify, ogg, pcm, self.child_db)
+                r = await loop.run_in_executor(None, voiceid.identify, ogg, pcm, self.child_profile)
             except Exception as e:
                 self.voice["error"] = str(e)[:120]
                 print("  [voice] %s" % e)
@@ -649,10 +660,11 @@ class Pixie:
             return None
         dur = max(1.2, min(6.0, words * 0.35))               # roughly how long the line took to say
         now = time.time()
-        who, level = voiceid.fast_tag(self.hub.clip_pcm(dur + 0.5, now), self.child_db)
+        who, sim = voiceid.fast_tag(self.hub.clip_pcm(dur + 0.5, now), self.child_profile)
         if who:
+            print("  [voice] instant %-5s match %.3f  %s" % (who, sim, text[:60]))
             self.hub.push({"type": "voices", "fast": True, "segments": [
-                {"t": now - dur, "end": now, "text": text, "who": who, "db": level}]})
+                {"t": now - dur, "end": now, "text": text, "who": who, "sim": sim}]})
             if who == "child":
                 self.voice["child_t"] = now
         return who
@@ -664,8 +676,8 @@ class Pixie:
         for s in segs:
             self.transcripts.add(s["text"], t=t0 + s["start"], who="child" if s["is_child"] else "other",
                                  speaker=s["speaker"], db=s["db"], src="scribe")
-            print("  [voice] %-6s %s (%s dB, %s)" % ("CHILD" if s["is_child"] else "other", s["text"][:70],
-                                                   s["db"], s["speaker"]))
+            print("  [voice] %-6s %s (%s, voice match %s)" % ("CHILD" if s["is_child"] else "other", s["text"][:70],
+                                                            s["speaker"], s.get("sim")))
         self.hub.push({"type": "voices", "segments": [           # lets live captions show who said each line
             {"t": t0 + s["start"], "end": t0 + s["end"], "text": s["text"], "who": "child" if s["is_child"] else "other"}
             for s in segs]})
@@ -695,18 +707,18 @@ class Pixie:
         if opened and not self.mic_needed():
             await self.hub.set_mic(False)
         try:
-            level, r = await asyncio.get_running_loop().run_in_executor(None, voiceid.child_level, ogg, pcm)
+            profile, level = await asyncio.get_running_loop().run_in_executor(None, voiceid.enroll, pcm)
         except Exception as e:
-            level, r = None, {}
+            profile, level = None, None
             self.voice["error"] = str(e)[:120]
-        if level is not None:
-            self.child_db = level
-            self.voice_file.write_text(json.dumps({"child_db": level, "t": time.time()}))
+        if profile:
+            self.child_profile, self.child_db = profile, level
+            self.voice_file.write_text(json.dumps({"profile": profile, "child_db": level, "t": time.time()}))
             self.hub.save_clip("enroll-%s.ogg" % CHILD.lower(), seconds, end)
-            self.log_line("%s's voice enrolled (%.0f dB on the band)" % (CHILD, level))
+            self.log_line("%s's voice enrolled (voice pitch about %s Hz)" % (CHILD, int(profile["f0"] or 0)))
         elif not self.voice["error"]:
-            self.voice["error"] = "No speech heard: ask %s to talk for the whole 10 seconds" % CHILD
-        self.voice.update(enrolling=False, enrolled=self.child_db is not None)
+            self.voice["error"] = "Not enough speech heard: ask %s to talk for the whole 10 seconds" % CHILD
+        self.voice.update(enrolling=False, enrolled=self.child_profile is not None)
         self.publish()
 
     # ================================================================ who needs the mic

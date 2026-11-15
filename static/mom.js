@@ -816,7 +816,7 @@ function renderSettings() {
   $('s-enroll').textContent = v.enrolling ? '🔴 Recording… ask Maya to talk' : (v.enrolled ? '🎙 Record again' : '🎙 Record 10 s');
   $('s-voice').textContent = !v.on ? 'Needs an ElevenLabs key (.env.local)'
     : v.error ? `Couldn't check: ${v.error}`
-    : `${v.enrolled ? 'Enrolled ✓' : 'Not enrolled yet: record Maya talking alone for 10 s'} · ${v.method === 'library' ? 'matched by ElevenLabs speaker profile' : v.method === 'loudness' ? 'told apart by how close the voice is to the band' : 'waiting for speech'}`;
+    : `${v.enrolled ? 'Enrolled ✓' : 'Not enrolled yet: record Maya talking alone for 10 s'} · ${v.method === 'library' ? 'matched by ElevenLabs speaker profile' : v.enrolled ? 'told apart by voice (pitch and tone)' : 'nobody is tagged as Maya until enrolled'}`;
   const n = (S.history || []).length;
   $('s-hist-count').textContent = n ? `${n} entr${n === 1 ? 'y' : 'ies'}: past alerts, device events and their recordings` : 'Nothing to clear';
   $('s-clear-history').disabled = !n;

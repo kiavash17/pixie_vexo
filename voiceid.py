@@ -7,9 +7,8 @@ Each speaker's words become transcript segments tagged is_child:
 
   1. speaker library: a speaker_id that is a registered profile (not "speaker_N") is the child
      (CHILD_SPEAKER_ID in the env picks one profile if the workspace has several);
-  2. loudness fallback: the band's mic sits much closer to the child's mouth than to anyone
-     else's, so the loudest speaker in the clip, clearly louder than the others and at least as
-     loud as the child's enrolled level, is the child.
+  2. voiceprint: each speaker's pitch + timbre is compared with the child's enrolled voiceprint
+     (voiceprint.py); loudness is NOT used, since everyone near the band can be loud.
 
 This runs in parallel with the Deepgram live path, which is untouched. The tags let child-only
 features (things the child says, calling for a parent, quiet time) count only the child, while
@@ -54,9 +53,11 @@ def client():
 
 def _db(samples):
     """RMS level in dBFS of int16 samples."""
-    if not samples:
+    if len(samples) == 0:
         return -96.0
-    rms = math.sqrt(sum(s * s for s in samples) / len(samples))
+    import numpy as np
+    x = np.asarray(samples, dtype=np.float64)          # works for array('h') and numpy, no int16 overflow
+    rms = math.sqrt(float(np.mean(x * x)))
     return 20 * math.log10(max(rms, 1.0) / 32768.0)
 
 
@@ -65,10 +66,16 @@ def _word_db(pcm, start, end, rate=16000):
     return _db(pcm[a:b]) if b > a else -96.0
 
 
-def identify(ogg_bytes, pcm_samples, child_db=None):
+def _span(pcm, start, end, rate=16000):
+    return pcm[int(start * rate):int(end * rate)]
+
+
+def identify(ogg_bytes, pcm_samples, profile=None):
     """Scribe + speaker tagging for one clip.
-    pcm_samples: the same audio as int16 samples at 16 kHz (for loudness per word).
-    Returns {"segments": [{"speaker", "text", "start", "end", "db", "is_child"}], "method", "speakers"}."""
+    pcm_samples: the same audio as int16 samples at 16 kHz; profile: the child's enrolled voiceprint.
+    Returns {"segments": [{"speaker", "text", "start", "end", "db", "is_child", "sim"}], "method", "speakers"}."""
+    import numpy as np
+    import voiceprint as vp
     result = client().speech_to_text.convert(
         file=("clip.ogg", ogg_bytes, "audio/ogg"), model_id=MODEL, diarize=True, use_speaker_library=True,
         timestamps_granularity="word", tag_audio_events=False)
@@ -91,27 +98,33 @@ def identify(ogg_bytes, pcm_samples, child_db=None):
 
     wanted = os.environ.get("CHILD_SPEAKER_ID", "").strip()
     library = [s["speaker"] for s in segments if not re.fullmatch(r"speaker_\d+", s["speaker"])]
+    sims = {}
     if library:                                          # 1. matched against the speaker library
         method = "library"
         child = {sp for sp in library if not wanted or sp == wanted}
-    else:                                                # 2. loudness: the mic is on the child's wrist
-        method = "loudness"
-        level = {}
-        for s in segments:
-            level.setdefault(s["speaker"], []).extend(s["dbs"])
-        med = {sp: sorted(v)[len(v) // 2] for sp, v in level.items()}
-        ranked = sorted(med.items(), key=lambda kv: -kv[1])
-        floor = (child_db if child_db is not None else DEFAULT_CHILD_DB) - 6
+    else:                                                # 2. voiceprint: pitch + timbre vs the enrolled child
+        method = "voiceprint" if profile else "not enrolled"
         child = set()
-        if ranked and ranked[0][1] >= floor:
-            if len(ranked) == 1 or ranked[0][1] - ranked[1][1] >= LOUDER_BY_DB:
-                child = {ranked[0][0]}
+        if profile:
+            by_speaker = {}
+            for s in segments:
+                by_speaker.setdefault(s["speaker"], []).append(_span(pcm_samples, s["start"], s["end"]))
+            best = None
+            for sp, parts in by_speaker.items():
+                vp_sp = vp.compute(np.concatenate([np.asarray(p) for p in parts if len(p)]) if parts else [])
+                ok, sim, st = vp.is_match(vp_sp, profile)
+                sims[sp] = (sim, st)
+                if ok and (best is None or sim > sims[best][0]):
+                    best = sp
+            if best:
+                child = {best}                          # one voice per clip can be the child: the closest match
     for s in segments:
         dbs = sorted(s.pop("dbs"))
-        s["db"] = round(dbs[len(dbs) // 2], 1)          # median loudness of the segment's words
+        s["db"] = round(dbs[len(dbs) // 2], 1)          # median loudness, shown for information only
         s["is_child"] = s["speaker"] in child
+        s["sim"] = sims.get(s["speaker"], (None, None))[0]
     return {"segments": segments, "method": method, "speakers": len({s["speaker"] for s in segments}),
-            "child_speakers": sorted(child)}
+            "child_speakers": sorted(child), "sims": sims}
 
 
 FAST_MARGIN_DB = 5.0                   # instant tag: within this many dB of the child's enrolled level
@@ -127,18 +140,20 @@ def voiced_db(pcm_samples, rate=16000):
     return frames[int(len(frames) * 0.75)]
 
 
-def fast_tag(pcm_samples, child_db=None):
-    """Instant guess for a line that just ended: is it as loud as the child's own voice on the band?
-    No network: ~1 s after the words instead of ~15 s. Scribe confirms or corrects it later."""
-    level = voiced_db(pcm_samples)
-    if level is None:
+def fast_tag(pcm_samples, profile=None):
+    """Instant tag for a line that just ended: does the voice match the child's voiceprint?
+    No network: ~1 s after the words instead of ~15 s. Scribe confirms or corrects it later.
+    Returns (who, similarity): who is None when not enrolled or too little speech to tell."""
+    import voiceprint as vp
+    if not profile:
         return None, None
-    ref = child_db if child_db is not None else DEFAULT_CHILD_DB
-    return ("child" if level >= ref - FAST_MARGIN_DB else "other"), round(level, 1)
+    ok, sim, _st = vp.is_match(vp.compute(pcm_samples), profile)
+    if ok is None:
+        return None, None
+    return ("child" if ok else "other"), sim
 
 
-def child_level(ogg_bytes, pcm_samples):
-    """Enrollment: the child's typical loudness on this band, from a clip of only the child talking."""
-    r = identify(ogg_bytes, pcm_samples, child_db=-96.0)
-    dbs = sorted(s["db"] for s in r["segments"])
-    return (dbs[len(dbs) // 2] if dbs else None), r
+def enroll(pcm_samples):
+    """Enrollment from a clip of only the child talking: the voiceprint (+ loudness, for info)."""
+    import voiceprint as vp
+    return vp.compute(pcm_samples), voiced_db(pcm_samples)
