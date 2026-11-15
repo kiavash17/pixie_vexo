@@ -192,9 +192,10 @@ function renderNearby(child) {
   const words = [];
   if (others) words.push(`${others} other ${others === 1 ? 'child' : 'children'}`);
   if (adults) words.push(`${adults} ${adults === 1 ? 'adult' : 'adults'}`);
-  $('nearby-t').textContent = !fresh
+  const spoke = S.voice && S.voice.child_t ? ` · ${child} spoke ${ago(S.voice.child_t)}` : '';
+  $('nearby-t').textContent = (!fresh
     ? (n.t ? `No voices heard recently (last ${ago(n.t)})` : 'No voices heard yet')
-    : words.length ? `${words.join(' · ')} · heard ${ago(n.t)}` : `Only ${child} heard · ${ago(n.t)}`;
+    : words.length ? `${words.join(' · ')} · heard ${ago(n.t)}` : `Only ${child} heard · ${ago(n.t)}`) + spoke;
 }
 
 // ------------------------------------------------------------------ live captions
@@ -203,17 +204,45 @@ function onCaption(m) {
   if (!S || !S.captions) return;
   if (!m.final) { $('cap-interim').textContent = m.text; return; }
   $('cap-interim').textContent = '';
-  capLines.push({ t: Date.now() / 1000, text: m.text });
+  capLines.push({ t: Date.now() / 1000, text: m.text, who: null });
   while (capLines.length > 8) capLines.shift();
-  $('cap-lines').replaceChildren(...capLines.map((l) => {
-    const p = el('p'); p.append(el('time', '', clockTime(l.t)), document.createTextNode(l.text)); return p;
-  }));
+  drawCaptions();
   $('cap-lines').scrollTop = $('cap-lines').scrollHeight;
+}
+function drawCaptions() {
+  const child = S ? S.child : 'Maya';
+  const tagging = S && S.voice && S.voice.on;
+  $('cap-lines').replaceChildren(...capLines.map((l) => {
+    const p = el('p'); p.append(el('time', '', clockTime(l.t)));
+    if (l.who) p.append(el('span', `who ${l.who}`, l.who === 'child' ? child : 'someone else'));
+    else if (tagging && Date.now() / 1000 - l.t < 40) p.append(el('span', 'who pending', 'identifying…'));
+    p.append(document.createTextNode(l.text));
+    return p;
+  }));
+}
+const wordsOf = (s) => new Set(s.toLowerCase().replace(/[^\p{L}\p{N}' ]/gu, ' ').split(/\s+/).filter((w) => w.length > 1));
+/** Scribe's speaker tags arrive ~15 s after the words: put them on the matching caption lines. */
+function onVoices(m) {
+  for (const seg of m.segments) {
+    const sw = wordsOf(seg.text);
+    if (!sw.size) continue;
+    let best = null, bestScore = 0;
+    for (const l of capLines) {
+      if (l.who || l.t < seg.t - 8 || l.t > seg.end + 20) continue;
+      const lw = wordsOf(l.text);
+      const shared = [...lw].filter((w) => sw.has(w)).length;
+      const score = lw.size ? shared / lw.size : 0;
+      if (score > bestScore) { bestScore = score; best = l; }
+    }
+    if (best && bestScore >= 0.4) best.who = seg.who;
+  }
+  drawCaptions();
 }
 function renderCaptions() {
   $('captions').classList.toggle('hidden', !S.captions);
   $('b-captions').textContent = S.captions ? '📝 Captions on' : '📝 Captions';
   $('b-captions').disabled = !S.band.connected;
+  if (S.captions && capLines.length) drawCaptions();   // lets "identifying…" badges expire
 }
 $('b-captions').onclick = () => send({ cmd: 'captions', on: !(S && S.captions) });
 $('cap-stop').onclick = () => send({ cmd: 'captions', on: false });
@@ -261,7 +290,9 @@ function renderTranscript() {
   for (const l of lines) {
     const h = new Date(l.t * 1000).getHours();
     if (h !== hour) { hour = h; nodes.push(el('div', 'day', `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`)); }
-    const p = el('p', 'tr-line'); p.append(el('time', '', clockTime(l.t)), document.createTextNode(l.text));
+    const p = el('p', `tr-line ${l.who || ''}`); p.append(el('time', '', clockTime(l.t)));
+    if (l.who) p.append(el('span', `who ${l.who}`, l.who === 'child' ? (S ? S.child : 'Maya') : 'someone else'));
+    p.append(document.createTextNode(l.text));
     nodes.push(p);
   }
   if (!nodes.length) nodes.push(el('p', 'empty', q ? 'No matches.' : 'Nothing recorded yet today. Turn on Listening mode or Captions.'));
@@ -352,6 +383,7 @@ $('nudge-hug').onclick = () => { send({ cmd: 'hug' }); send({ cmd: 'nudge_dismis
 $('nudge-ok').onclick = () => send({ cmd: 'nudge_dismiss' });
 $('s-quiet').onchange = (e) => send({ cmd: 'quiet_check', minutes: Number(e.target.value) });
 $('s-gesture').onchange = (e) => send({ cmd: 'gesture', value: e.target.value });
+$('s-enroll').onclick = () => send({ cmd: 'enroll_voice' });
 
 // ------------------------------------------------------------------ the day as a picture
 let dayWhich = null;
@@ -767,6 +799,12 @@ function renderSettings() {
   renderWalletSettings(S.wallet);
   if (document.activeElement !== $('s-quiet')) $('s-quiet').value = String(S.quiet_minutes);
   if (document.activeElement !== $('s-gesture')) $('s-gesture').value = S.gesture || 'twice';
+  const v = S.voice || {};
+  $('s-enroll').disabled = !v.on || v.enrolling || !S.band.connected;
+  $('s-enroll').textContent = v.enrolling ? '🔴 Recording… ask Maya to talk' : (v.enrolled ? '🎙 Record again' : '🎙 Record 10 s');
+  $('s-voice').textContent = !v.on ? 'Needs an ElevenLabs key (.env.local)'
+    : v.error ? `Couldn't check: ${v.error}`
+    : `${v.enrolled ? 'Enrolled ✓' : 'Not enrolled yet: record Maya talking alone for 10 s'} · ${v.method === 'library' ? 'matched by ElevenLabs speaker profile' : v.method === 'loudness' ? 'told apart by how close the voice is to the band' : 'waiting for speech'}`;
   const n = (S.history || []).length;
   $('s-hist-count').textContent = n ? `${n} entr${n === 1 ? 'y' : 'ies'}: past alerts, device events and their recordings` : 'Nothing to clear';
   $('s-clear-history').disabled = !n;
@@ -830,6 +868,7 @@ function open() {
     else if (m.type === 'day') renderDay(m);
     else if (m.type === 'trends') renderTrends(m);
     else if (m.type === 'transcript') onCaption(m);
+    else if (m.type === 'voices') onVoices(m);
   };
   ws.onclose = () => {
     if (S) { S.band.connected = false; S.band.state = 'offline'; S.notice = 'Lost connection to Pixie, retrying…'; render(); }

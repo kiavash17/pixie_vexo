@@ -310,6 +310,13 @@ main { padding: 14px; display: grid; gap: 14px; }
 .quick { grid-template-columns: 1fr 1fr 1fr !important; gap: 8px !important; }
 .quick .btn { padding: 12px 6px; font-size: 14px; }
 
+.tr-line .who, .cap-lines .who { font-size: 11px; font-weight: 800; padding: 1px 7px; border-radius: 99px; margin-right: 6px; }
+.tr-line .who.child, .cap-lines .who.child { background: #ffd166; color: #4a3300; }
+.tr-line .who.other { background: #ece9f6; color: var(--dim); }
+.cap-lines .who.other { background: rgba(255,255,255,.18); color: #fff; }
+.cap-lines .who.pending { background: transparent; color: rgba(255,255,255,.45); font-weight: 600; font-style: italic; }
+.tr-line.other { color: var(--dim); }
+
 /* ---------- who's around ---------- */
 .nearby { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; display: grid; gap: 6px; text-align: left; }
 .nearby-l { font-size: 12px; font-weight: 800; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }

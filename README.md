@@ -98,7 +98,7 @@ Needs `aiohttp` as well: `python -m pip install aiohttp`.
 git clone https://github.com/kiavash17/pixie_vexo.git
 cd pixie_vexo
 git clone https://github.com/VexoAI-Org/vexo-open-kit.git
-python -m pip install bleak av certifi
+python -m pip install bleak av certifi aiohttp elevenlabs
 ```
 
 Python 3.9 or newer. For transcripts, create `.env` in this folder (it is git-ignored):

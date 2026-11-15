@@ -39,6 +39,8 @@ def count_mentions(lines):
     """Theme counts for transcript lines (real data path)."""
     out = {k: 0 for k, *_ in MENTIONS}
     for l in lines:
+        if l.get("who") == "other":                    # only what the child said counts
+            continue
         for k, _l, _i, _kind, rx in MENTIONS:
             if re.search(rx, l["text"], re.I):
                 out[k] += 1

@@ -24,6 +24,7 @@ import gemini
 from wallet import Wallet
 import daylog
 import trends
+import voiceid
 
 CHILD = "Maya"
 GUARDIANS = [{"name": "Mom", "role": "primary"}, {"name": "Dad", "role": "secondary"}]
@@ -111,6 +112,11 @@ class Pixie:
         self.todos_file = data_dir / "todos.json"
         self.todos = json.loads(self.todos_file.read_text()) if self.todos_file.exists() else []
         self.captions = False              # guardian turned live captions on (mic open, no audio file)
+        self.voice_file = data_dir / "voice.json"           # Maya's enrolled loudness on this band
+        saved = json.loads(self.voice_file.read_text()) if self.voice_file.exists() else {}
+        self.child_db = saved.get("child_db")
+        self.voice = {"on": voiceid.available(), "method": None, "speakers": 0, "t": None,
+                      "child_t": None, "enrolled": self.child_db is not None, "enrolling": False, "error": None}
         self.actions_seen_t = time.time()  # transcript lines after this are checked for parent to-dos
 
     # ================================================================ snapshot for the page
@@ -135,7 +141,7 @@ class Pixie:
             "notice": self.notice, "fall_check": self.fall_check,
             "wallet": self.wallet.snapshot(),
             "nudge": self.nudge, "quiet_minutes": self.quiet_minutes, "listen_in": self.listen_in,
-            "gesture": self.gesture, "captions": self.captions, "nearby": self.nearby(),
+            "gesture": self.gesture, "captions": self.captions, "nearby": self.nearby(), "voice": self.voice,
             "todos": [t for t in self.todos if not t.get("deleted")][-40:][::-1],
             "last_social": self.last_social if self.listening else None,
             "listen": dict(self.listen, on=self.listening, gemini=gemini.available(),
@@ -377,8 +383,8 @@ class Pixie:
         await self.assess(eid)
 
     def on_text(self, text, final):                          # live transcript during the note
-        if final and (text or "").strip():
-            self.transcripts.add(text.strip())               # the full-day transcript
+        if final and (text or "").strip() and not voiceid.available():
+            self.transcripts.add(text.strip())               # full-day transcript (Scribe writes it, tagged, when on)
         if final and self.listening and not self.active and CALL_RE.search(text or ""):
             self.on_voice_call(text, "heard")                # fast path: Deepgram words
             return
@@ -460,6 +466,8 @@ class Pixie:
             await self.wallet.command(cmd)
         elif c == "clear_history":
             self.clear_history()
+        elif c == "enroll_voice":
+            self.spawn_bg(self.enroll_voice())
         elif c == "captions":
             await self.set_captions(bool(cmd.get("on")))
         elif c == "todo_done":
@@ -608,6 +616,82 @@ class Pixie:
             await self.pause_for_light(lambda: self.flash_led(name, seconds))
         elif not self.hub.status["mic"]:
             await self.flash_led(name, seconds)
+
+    # ================================================================ whose voice (ElevenLabs Scribe)
+    async def voice_loop(self):
+        """Every VOICE_WINDOW s with sound: Scribe tags each speaker's words; the child's are is_child."""
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(voiceid.VOICE_WINDOW)
+            if not (voiceid.available() and self.hub.status["mic"]) or self.voice["enrolling"]:
+                continue
+            loud = self.hub.loudest_db(voiceid.VOICE_WINDOW)
+            if loud is None or loud > GATE_DB:
+                continue                                       # quiet: nothing sent
+            end = time.time()
+            ogg = self.hub.clip(voiceid.VOICE_WINDOW, end)
+            pcm = self.hub.clip_pcm(voiceid.VOICE_WINDOW, end)
+            if not ogg:
+                continue
+            try:
+                r = await loop.run_in_executor(None, voiceid.identify, ogg, pcm, self.child_db)
+            except Exception as e:
+                self.voice["error"] = str(e)[:120]
+                print("  [voice] %s" % e)
+                continue
+            self.on_voices(r, end - voiceid.VOICE_WINDOW)
+
+    def on_voices(self, r, t0):
+        segs = r["segments"]
+        self.voice.update(method=r["method"], speakers=r["speakers"], t=time.time(), error=None)
+        child_said = [s for s in segs if s["is_child"]]
+        for s in segs:
+            self.transcripts.add(s["text"], t=t0 + s["start"], who="child" if s["is_child"] else "other",
+                                 speaker=s["speaker"], db=s["db"], src="scribe")
+            print("  [voice] %-6s %s (%s dB, %s)" % ("CHILD" if s["is_child"] else "other", s["text"][:70],
+                                                   s["db"], s["speaker"]))
+        self.hub.push({"type": "voices", "segments": [           # lets live captions show who said each line
+            {"t": t0 + s["start"], "end": t0 + s["end"], "text": s["text"], "who": "child" if s["is_child"] else "other"}
+            for s in segs]})
+        if child_said:
+            self.voice["child_t"] = t0 + child_said[-1]["end"]
+            for s in child_said:                               # only the child calling counts as calling
+                if CALL_RE.search(s["text"]):
+                    self.on_voice_call(s["text"], "heard %s's voice" % CHILD)
+                    break
+            if len(child_said) < len(segs):                    # the child AND someone else talking
+                self.on_social()
+        self.publish()
+
+    async def enroll_voice(self, seconds=10):
+        """Record the child talking alone for a few seconds; their loudness calibrates the fallback."""
+        if not self.hub.band or not voiceid.available():
+            return
+        self.voice.update(enrolling=True, error=None)
+        self.publish()
+        opened = False
+        if not self.hub.status["mic"]:
+            await self.hub.set_mic(True, record=False)
+            opened = True
+        await asyncio.sleep(seconds)
+        end = time.time()
+        ogg, pcm = self.hub.clip(seconds, end), self.hub.clip_pcm(seconds, end)
+        if opened and not self.mic_needed():
+            await self.hub.set_mic(False)
+        try:
+            level, r = await asyncio.get_running_loop().run_in_executor(None, voiceid.child_level, ogg, pcm)
+        except Exception as e:
+            level, r = None, {}
+            self.voice["error"] = str(e)[:120]
+        if level is not None:
+            self.child_db = level
+            self.voice_file.write_text(json.dumps({"child_db": level, "t": time.time()}))
+            self.hub.save_clip("enroll-%s.ogg" % CHILD.lower(), seconds, end)
+            self.log_line("%s's voice enrolled (%.0f dB on the band)" % (CHILD, level))
+        elif not self.voice["error"]:
+            self.voice["error"] = "No speech heard: ask %s to talk for the whole 10 seconds" % CHILD
+        self.voice.update(enrolling=False, enrolled=self.child_db is not None)
+        self.publish()
 
     # ================================================================ who needs the mic
     def mic_needed(self):

@@ -6,3 +6,4 @@ recordings/
 data/
 data-sim/
 testaudio/
+.env.local

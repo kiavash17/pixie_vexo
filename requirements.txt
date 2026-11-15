@@ -1,0 +1,6 @@
+bleak
+av
+certifi
+aiohttp
+elevenlabs
+python-dotenv

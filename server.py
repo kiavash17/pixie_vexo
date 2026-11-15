@@ -40,7 +40,7 @@ REC_DIR = ROOT / "recordings"
 SENSORS = dict(motion=50, events=True, activity=0.5, battery=10, temperature=2, link=True)   # steps 2x/s
 PIXIE_COMMANDS = {"ack", "resolve", "label", "hug", "find", "simulate", "fall_check", "listen", "call", "wallet", "clear_history",
                   "quiet_check", "nudge_dismiss", "day", "listen_in", "gesture",
-                  "captions", "todo_done", "todo_delete", "trends"}
+                  "captions", "todo_done", "todo_delete", "trends", "enroll_voice"}
 DATA_EVENTS = ["motion", "event", "activity", "battery", "temperature", "link", "mic-level"]
 
 
@@ -102,6 +102,22 @@ class Hub:
             w.write((s - first) & 0xFFFF, o)
         w.close()                                  # writes the last page; buffer stays readable
         return buf.getvalue()
+
+    def clip_pcm(self, seconds, end=None):
+        """The same audio as clip(), decoded to int16 samples at 16 kHz (for loudness per word)."""
+        end = end or time.time()
+        chosen = [(s, o) for t, s, o in list(self.packets) if end - seconds <= t <= end]
+        if not chosen:
+            return []
+        dec = PcmDecoder()
+        out = bytearray()
+        for s, o in chosen:
+            out += dec.feed(o, s) or b""
+        out += dec.flush() or b""
+        import array
+        samples = array.array("h")
+        samples.frombytes(bytes(out[: len(out) // 2 * 2]))
+        return samples
 
     def save_clip(self, name, seconds, end=None):
         data = self.clip(seconds, end)
@@ -378,6 +394,7 @@ async def on_startup(app):
     asyncio.ensure_future(hub.monitor())
     asyncio.ensure_future(hub.pixie.listen_loop())
     asyncio.ensure_future(hub.pixie.actions_loop())
+    asyncio.ensure_future(hub.pixie.voice_loop())
 
 
 async def transcript_handler(request):

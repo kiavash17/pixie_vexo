@@ -70,11 +70,12 @@ class TranscriptLog:
         self.folder = folder
         folder.mkdir(parents=True, exist_ok=True)
 
-    def add(self, text, t=None):
+    def add(self, text, t=None, **extra):
+        """extra: who ("child" / "other"), speaker, db, src (voice identification tags)."""
         t = t or time.time()
         path = self.folder / ("%s.jsonl" % time.strftime("%Y-%m-%d", time.localtime(t)))
         with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"t": t, "text": text}) + "\n")
+            f.write(json.dumps(dict({"t": t, "text": text}, **extra)) + "\n")
 
     def lines(self, date=None):
         path = self.folder / ("%s.jsonl" % (date or time.strftime("%Y-%m-%d")))
