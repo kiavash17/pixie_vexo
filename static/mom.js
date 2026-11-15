@@ -214,8 +214,8 @@ function drawCaptions() {
   const tagging = S && S.voice && S.voice.on;
   $('cap-lines').replaceChildren(...capLines.map((l) => {
     const p = el('p'); p.append(el('time', '', clockTime(l.t)));
-    if (l.who) p.append(el('span', `who ${l.who}`, l.who === 'child' ? child : 'someone else'));
-    else if (tagging && Date.now() / 1000 - l.t < 40) p.append(el('span', 'who pending', 'identifying…'));
+    if (l.who) p.append(el('span', `spk ${l.who}`, l.who === 'child' ? child : 'someone else'));
+    else if (tagging && Date.now() / 1000 - l.t < 40) p.append(el('span', 'spk pending', 'identifying…'));
     p.append(document.createTextNode(l.text));
     return p;
   }));
@@ -291,7 +291,7 @@ function renderTranscript() {
     const h = new Date(l.t * 1000).getHours();
     if (h !== hour) { hour = h; nodes.push(el('div', 'day', `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`)); }
     const p = el('p', `tr-line ${l.who || ''}`); p.append(el('time', '', clockTime(l.t)));
-    if (l.who) p.append(el('span', `who ${l.who}`, l.who === 'child' ? (S ? S.child : 'Maya') : 'someone else'));
+    if (l.who) p.append(el('span', `spk ${l.who}`, l.who === 'child' ? (S ? S.child : 'Maya') : 'someone else'));
     p.append(document.createTextNode(l.text));
     nodes.push(p);
   }
