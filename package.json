@@ -4,7 +4,8 @@
   "description": "Pixie: a screenless help band for kids (VexoHacks). The app itself is Python; this is only for the scripted demo video.",
   "scripts": {
     "demo": "node demo/record.js",
-    "demo:portrait": "node demo/record.js --portrait"
+    "demo:portrait": "node demo/record.js --portrait",
+    "showcase": "node demo/showcase.js"
   },
   "devDependencies": {
     "playwright": "^1.50.0"

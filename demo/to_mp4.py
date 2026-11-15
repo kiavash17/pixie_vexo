@@ -5,6 +5,7 @@
                                                                     height in a bezel, step title on the
                                                                     left, Pixie wordmark on the right
 TRIM cuts the blank page load at the start. captions.json: [{"t": seconds since recording start, "text"}].
+  ... --audio voice.json    adds a voice-over track: [{"t": seconds since recording start, "path": WAV}]
 """
 import json
 import sys
@@ -12,6 +13,7 @@ from fractions import Fraction
 from pathlib import Path
 
 import av
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 W, H, FPS = 1920, 1080, 25
@@ -87,17 +89,25 @@ class Landscape:
         img = Image.new("RGBA", (pw, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
         if idx >= 0:
-            n = len(self.captions)
+            c = self.captions[idx]
+            # captions may carry their own numbering ("Feature 3 of 10"); otherwise every caption is a step
+            n, k = (c["total"], c["n"]) if "n" in c else (len(self.captions), idx + 1)
+            label = c.get("label") or ("STEP %d OF %d" % (k, n))
             title = font(BOLD, 58)
-            lines = wrap(d, self.captions[idx]["text"], title, pw - 20)
+            lines = wrap(d, c["text"], title, pw - 20)
             y = H // 2 - (len(lines) * 72) // 2
-            d.text((0, y - 70), "STEP %d OF %d" % (idx + 1, n), font=font(BOLD, 24), fill=TOMATO)
+            d.text((0, y - 70), label.upper(), font=font(BOLD, 24), fill=TOMATO)
             for line in lines:
                 d.text((0, y), line, font=title, fill=INK)
                 y += 72
+            if c.get("sub"):
+                for line in wrap(d, c["sub"], font(REG, 28), pw - 20):
+                    d.text((0, y + 8), line, font=font(REG, 28), fill=DIM)
+                    y += 38
+                y += 8
             for i in range(n):                                            # progress dots
                 x = i * 30
-                d.ellipse((x, y + 40, x + 16, y + 56), fill=INK if i <= idx else "#e8b52d")
+                d.ellipse((x, y + 40, x + 16, y + 56), fill=INK if i < k else "#e8b52d")
         self.panels[idx] = img
         return img
 
@@ -111,12 +121,69 @@ class Landscape:
         return frame
 
 
+AUDIO_RATE = 48000
+
+
+def voice_track(entries, start, seconds):
+    """Mix the voice-over lines into one mono float track; entry times are on the recording clock."""
+    mix = np.zeros(int(seconds * AUDIO_RATE), np.float32)
+    for e in entries:
+        with av.open(e["path"]) as f:
+            res = av.AudioResampler(format="flt", layout="mono", rate=AUDIO_RATE)
+            pcm = np.concatenate([r.to_ndarray().reshape(-1) for fr in f.decode(audio=0) for r in res.resample(fr)])
+        at = int(max(0.0, e["t"] - start) * AUDIO_RATE)
+        pcm = pcm[:max(0, len(mix) - at)]
+        mix[at:at + len(pcm)] += pcm
+    return np.clip(mix, -1, 1)
+
+
+def audio_stream(out):
+    aout = out.add_stream("aac", rate=AUDIO_RATE)
+    aout.layout = "mono"
+    aout.bit_rate = 128000
+    return aout
+
+
+def add_audio(out, aout, mix):
+    for i in range(0, len(mix), 1024):
+        fr = av.AudioFrame.from_ndarray(mix[i:i + 1024].reshape(1, -1), format="fltp", layout="mono")
+        fr.sample_rate, fr.pts = AUDIO_RATE, i
+        for p in aout.encode(fr):
+            out.mux(p)
+    for p in aout.encode(None):
+        out.mux(p)
+
+
+def find_flash(src):
+    """Video-clock time of the first magenta frame (the sync marker), or None."""
+    with av.open(src) as f:
+        s = f.streams.video[0]
+        for fr in f.decode(s):
+            r, g, b = fr.to_ndarray(format="rgb24")[::40, ::40].reshape(-1, 3).mean(0)
+            if r > 200 and g < 60 and b > 200:
+                return float(fr.pts * s.time_base)
+            if fr.pts * s.time_base > 30:
+                return None
+    return None
+
+
 def main():
     src, dst = sys.argv[1], sys.argv[2]
     trim = float(sys.argv[3]) if len(sys.argv) > 3 else 0.0
-    caps = None
+    caps = voice = None
     if "--landscape" in sys.argv:
         caps = json.loads(Path(sys.argv[sys.argv.index("--landscape") + 1]).read_text(encoding="utf-8"))
+    if "--audio" in sys.argv:
+        voice = json.loads(Path(sys.argv[sys.argv.index("--audio") + 1]).read_text(encoding="utf-8"))
+    # --sync SECONDS: when the script showed the magenta flash; the recording's own clock can start late
+    offset = 0.0
+    if "--sync" in sys.argv:
+        flash = find_flash(src)
+        if flash is None:
+            print("sync marker not found; using the recording's clock as is")
+        else:
+            offset = float(sys.argv[sys.argv.index("--sync") + 1]) - flash
+            print("recording clock is %.2f s behind the script's" % offset)
     with av.open(src) as inp, av.open(dst, "w") as out:
         vin = inp.streams.video[0]
         vout = out.add_stream("libx264", rate=FPS)
@@ -128,9 +195,10 @@ def main():
         vout.pix_fmt = "yuv420p"
         vout.options = {"crf": "20", "preset": "medium", "movflags": "+faststart"}
         vout.time_base = Fraction(1, FPS)
+        aout = audio_stream(out) if voice else None
         start, last_pts = None, -1
         for frame in inp.decode(vin):
-            t = float(frame.pts * vin.time_base) if frame.pts is not None else 0.0
+            t = (float(frame.pts * vin.time_base) if frame.pts is not None else 0.0) + offset   # script clock
             if t < trim:
                 continue
             start = t if start is None else start
@@ -148,6 +216,8 @@ def main():
                 out.mux(packet)
         for packet in vout.encode():
             out.mux(packet)
+        if voice:
+            add_audio(out, aout, voice_track(voice, start or 0.0, (last_pts + 1) / FPS))
     print("wrote %s" % dst)
 
 

@@ -548,6 +548,9 @@ class Pixie:
             elif cmd.get("what") in ("crying", "screaming", "adult_anger", "adult_concerning"):
                 k = cmd["what"]
                 luring = k == "adult_concerning"
+                if not luring:                           # a pretend event stands alone: forget earlier pretend ones
+                    self.recent.clear()
+                    self.concern_quotes.clear()
                 fake = {"crying": 0.1, "screaming": 0.1, "adult_anger": 0.1, "adult_concerning": 0.0,
                         "concern": "offered puppies to get the child into a van and asked them to keep it secret"
                         if luring else "",

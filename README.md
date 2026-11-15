@@ -68,7 +68,13 @@ Keys in `.env` (never committed): `DEEPGRAM_API_KEY`, `GEMINI_API_KEY`
 npm install          # once (Playwright; uses the installed Edge, plus `npx playwright install ffmpeg` once)
 npm run demo           # -> demo/out/pixie-demo.mp4 (1920x1080: phone centered, step titles beside it)
 npm run demo:portrait  # -> demo/out/pixie-demo-portrait.mp4 (phone only, 780x1688)
+npm run showcase       # -> demo/out/pixie-showcase.mp4 (~1:40, ten features with a voice-over)
 ```
+
+Finished videos: `demo/videos/pixie-demo-help-loop.mp4` (the help loop) and
+`demo/videos/pixie-showcase.mp4` (worrying adult, calling for help, crying/anger, fall check, live
+captions, teacher to-dos, Pixie Card, quiet-time nudge, Maya's day, patterns). The voice-over lines
+are in `demo/assets/vo/` (`python demo/make_voiceover.py` regenerates them with Gemini TTS).
 
 It starts its own server on the pretend band (port 8777, fresh demo data), plays a child's line
 through the pretend band's mic (`demo/assets/maya.ogg`, made with `python demo/make_voice.py`),
