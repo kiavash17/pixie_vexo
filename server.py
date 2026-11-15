@@ -74,6 +74,7 @@ class Hub:
         self.sim_audio = None
         self.band = None
         self.clients = {}                          # websocket -> outgoing queue
+        self.audio_clients = set()                 # websockets that asked for live sound
         self.status = {"type": "status", "state": "idle", "band": "Vexo-HACK-%02d" % BAND,
                        "mic": False, "transcript": None, "message": ""}
         self.decoder = None
@@ -218,8 +219,10 @@ class Hub:
                 q.put_nowait(text)
 
     def push_bytes(self, data):
-        for q in self.clients.values():
-            if q.qsize() < 2000:
+        """Live sound (50 chunks/s) only to pages that asked for it (control room audio, Listen in):
+        flooding every page backed up slow ones until their own messages stalled."""
+        for ws, q in self.clients.items():
+            if ws in self.audio_clients and q.qsize() < 500:
                 q.put_nowait(bytes(data))
 
     def set_status(self, **changes):
@@ -362,10 +365,12 @@ def list_recordings():
 # -------------------------------------------------------------------- web
 async def ws_handler(request):
     hub = request.app["hub"]
-    ws = web.WebSocketResponse(heartbeat=20)
+    ws = web.WebSocketResponse(heartbeat=None)
     await ws.prepare(request)
     q = asyncio.Queue()
     hub.clients[ws] = q
+    if os.environ.get("PIXIE_DEBUG_CMDS"):
+        print("  [ws] open %s (%d clients) %s" % (id(ws), len(hub.clients), request.headers.get("User-Agent", "")[:40]))
     q.put_nowait(json.dumps(hub.status))
     q.put_nowait(json.dumps({"type": "recordings", "files": list_recordings()}))
     q.put_nowait(json.dumps(hub.pixie.snapshot(), default=str))
@@ -384,7 +389,11 @@ async def ws_handler(request):
             if msg.type != WSMsgType.TEXT:
                 continue
             cmd = json.loads(msg.data)
-            if cmd.get("cmd") == "connect":
+            if os.environ.get("PIXIE_DEBUG_CMDS"):
+                print("  [cmd] %s from %s" % (cmd, id(ws)))
+            if cmd.get("cmd") == "audio_stream":       # this page wants the live sound (or not)
+                (hub.audio_clients.add if cmd.get("on") else hub.audio_clients.discard)(ws)
+            elif cmd.get("cmd") == "connect":
                 asyncio.ensure_future(hub.connect())
             elif cmd.get("cmd") == "mic":
                 try:
@@ -399,6 +408,9 @@ async def ws_handler(request):
     finally:
         task.cancel()
         hub.clients.pop(ws, None)
+        hub.audio_clients.discard(ws)
+        if os.environ.get("PIXIE_DEBUG_CMDS"):
+            print("  [ws] closed %s" % id(ws))
     return ws
 
 

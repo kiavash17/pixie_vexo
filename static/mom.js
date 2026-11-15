@@ -140,8 +140,13 @@ function playPcm(buf) {                          // 20 ms of PCM16 mono @16 kHz 
   src.start(liveNext); liveNext += ab.duration;
   $('vu').style.width = `${Math.min(100, peak * 160)}%`;
 }
+let audioWanted = false;                          // the server only streams sound to pages that ask
 function renderListenIn(child) {
   const li = S.listen_in;
+  if (!!li !== audioWanted && ws && ws.readyState === 1) {
+    audioWanted = !!li;
+    send({ cmd: 'audio_stream', on: audioWanted });
+  }
   $('livebar').classList.toggle('hidden', !li);
   $('b-listen-in').disabled = !S.band.connected;
   $('b-listen-in').textContent = li ? '🎧 Listening…' : '🎧 Listen in';
@@ -867,6 +872,7 @@ function open() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.binaryType = 'arraybuffer';
+  audioWanted = false;                            // a new connection starts without sound; renderListenIn asks again if needed
   ws.onmessage = (e) => {
     if (typeof e.data !== 'string') return playPcm(e.data);   // live sound (only played while listening in)
     const m = JSON.parse(e.data);

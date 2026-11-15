@@ -62,6 +62,19 @@ rules it's paid (band flashes green); over a limit or in a blocked category Mom 
 Keys in `.env` (never committed): `DEEPGRAM_API_KEY`, `GEMINI_API_KEY`
 (optional fallback `GEMINI_WORKSHOP_API_KEY`).
 
+### Scripted demo video
+
+```
+npm install          # once (Playwright; uses the installed Edge, plus `npx playwright install ffmpeg` once)
+npm run demo         # -> demo/out/pixie-demo.mp4 (390x844 phone, 3x, ~40 s)
+```
+
+It starts its own server on the pretend band (port 8777, fresh demo data), plays a child's line
+through the pretend band's mic (`demo/assets/maya.ogg`, made with `python demo/make_voice.py`),
+and walks through: alerts on, calm, Maya double-taps, the alert with what she said, Mom taps
+*I'm coming*, green, *All good*, back to calm. Set `PIXIE_PYTHON` if `python` isn't the
+environment with the project's packages.
+
 ### Testing without a band
 
 ```

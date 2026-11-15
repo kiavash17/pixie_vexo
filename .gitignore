@@ -7,3 +7,6 @@ data/
 data-sim/
 testaudio/
 .env.local
+node_modules/
+demo/out/
+!demo/assets/*.ogg

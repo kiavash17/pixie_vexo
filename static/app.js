@@ -173,6 +173,7 @@ function open() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';   // https pages (dev tunnels) need wss
   try {
     ws = new WebSocket(`${proto}://${location.host}/ws`);
+    ws.addEventListener('open', () => ws.send(JSON.stringify({ cmd: 'audio_stream', on: true })));   // this page plays/records the sound
   } catch (err) {
     handlers.status({ state: 'error', band: '–', message: `WebSocket failed: ${err.message}` });
     return setTimeout(open, 3000);
